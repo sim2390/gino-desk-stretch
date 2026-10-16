@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What the card window may do: Gino's own commands, and moving itself when dragged",
+  "windows": ["card"],
+  "permissions": ["core:default", "core:window:allow-start-dragging"]
+}

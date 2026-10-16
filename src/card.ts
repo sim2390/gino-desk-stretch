@@ -1,5 +1,6 @@
-// The pop-up card. Driven by the main process through window.ginoApi (preload.ts).
+// The pop-up card. Driven by the Rust side through window.ginoApi (bridge.ts).
 // Bundled with gino.ts into build/card.js, the one script src/card.html loads.
+import './bridge'; // first: it sets window.ginoApi, which is read below
 import { demo, setMove, svg, type PlateMove } from './gino';
 import type { ActionReply, CardAction, CardContent, GinoApi, Move, PoseName, RepPhase, ShowPayload } from './types';
 
@@ -125,6 +126,10 @@ function fit() {
     if (api) api.resize(card.offsetHeight + 36);
   });
 }
+
+// The card can also change height after fit() measured it, for example when the web fonts
+// arrive after the first show; measure again whenever it does, so it's never cut off.
+if (api) new ResizeObserver(() => fit()).observe(card);
 
 function clearTimers() {
   window.clearInterval(timerId);

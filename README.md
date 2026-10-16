@@ -23,6 +23,9 @@ through it.
   presenting. The card pops up without taking your keyboard focus, and if you ignore it, it snoozes
   itself.
 - **Counts what you've done today.**
+- **Small and light.** Gino uses the web engine already built into your computer instead of bringing
+  his own, so the Windows download is about {{INSTALLER_MB}} MB and he needs about {{RAM_MB}} MB of
+  memory.
 - **Keeps to itself.** Gino never connects to the internet. Your settings and counts stay on your
   computer.
 
@@ -32,22 +35,31 @@ Gino isn't code-signed yet, so your computer warns you the first time you open i
 
 ### Windows 10 and 11
 
-1. Download **Gino-Setup-0.2.0.exe** from the
+1. Download **Gino-Setup-0.3.0.exe** from the
    [latest release](https://github.com/sim2390/gino-desk-stretch/releases/latest).
-2. Run it. If Windows says it protected your PC, click **More info**, then **Run anyway**.
+2. Run it. If Windows says it protected your PC, click **More info**, then **Run anyway**. Gino
+   installs just for you, so it doesn't need admin rights.
 3. Gino lives in the tray by the clock. Windows 11 hides new tray icons under the **^** arrow: drag
    him out onto the taskbar so you can always see him.
 4. Click Gino and tick **Start with Windows**.
 
-Rather not install anything? Download **Gino-0.2.0-portable.exe** instead. It runs as it is.
+**Updating from Gino 0.2?** Just run the new installer. It closes and removes the old Gino for you,
+and keeps your settings, your counts and **Start with Windows**. There's no portable version any
+more: if you used it, quit it and delete it, and the installed Gino carries on with your settings and
+counts.
+
+Gino's card is drawn by Microsoft Edge WebView2, which comes with Windows 11 and almost every
+Windows 10 PC. If yours doesn't have it, the installer fetches it from Microsoft.
 
 ### macOS (Apple silicon: M1 and later)
 
-1. Download **Gino-0.2.0-arm64.dmg** from the
+1. Download **Gino-0.3.0-arm64.dmg** from the
    [latest release](https://github.com/sim2390/gino-desk-stretch/releases/latest) and drag Gino into
-   Applications.
-2. The first time, right-click Gino in Applications and choose **Open**. If macOS says the app is
-   damaged, run `xattr -cr /Applications/Gino.app` in Terminal once, then open it again.
+   Applications. Updating? Quit the old Gino first, then replace it.
+2. The first time, open Gino. macOS says it can't check the app: close that message, open
+   **System Settings › Privacy & Security**, scroll down and click **Open Anyway** next to Gino. If
+   macOS says the app is damaged instead, run `xattr -cr /Applications/Gino.app` in Terminal once,
+   then open it again.
 3. Gino lives in the menu bar. Click him and tick **Open at login**.
 
 ## Using Gino
@@ -89,7 +101,9 @@ explains every field and shows how to preview your changes.
 
 ## Run it from the source
 
-You need [Node.js](https://nodejs.org) 22.12 or newer.
+You need [Node.js](https://nodejs.org) 22.12 or newer and [Rust](https://rustup.rs). On Windows you
+also need the Microsoft C++ build tools, and on a Mac the Xcode command line tools:
+[Development](docs/development.md#setup) says how to get them.
 
 ```
 git clone https://github.com/sim2390/gino-desk-stretch.git
@@ -98,10 +112,11 @@ npm install
 npm start
 ```
 
-Gino is written in TypeScript. `npm start` compiles it first (it takes about a second), and the first
-start downloads Electron (about 100 MB). `npm run fast` turns minutes into seconds so you can watch a
-whole cycle quickly, `npm test` checks the timer and placement logic, and `npm run typecheck` checks the
-types. [Development](docs/development.md) explains how the app fits together and how to build the
+Gino's app is written in Rust with [Tauri](https://tauri.app), and his card in TypeScript. The first
+`npm start` compiles Tauri, which takes a few minutes; after that he starts in seconds. `npm run fast`
+turns minutes into seconds so you can watch a whole cycle quickly, `npm test` checks the timer,
+placement and settings logic, and `npm run typecheck` checks the TypeScript.
+[Development](docs/development.md) explains how the app fits together and how to build the
 installers.
 
 ## Documentation

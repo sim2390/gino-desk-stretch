@@ -11,30 +11,44 @@ on:
 jobs:
   build:
     strategy:
+      fail-fast: false
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            bundle: nsis
+          - os: macos-latest
+            bundle: dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
-      - name: Build Windows
-        if: runner.os == 'Windows'
-        run: npm run dist:win
-      - name: Build macOS (unsigned)
-        if: runner.os == 'macOS'
-        run: npm run dist:mac
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      # The Mac build is unsigned (an ad-hoc signature, see tauri.conf.json),
+      # so the first launch needs Open Anyway in Privacy & Security.
+      - run: npx tauri build --bundles ${{ matrix.bundle }}
+      # Tauri names them Gino_<version>_x64-setup.exe and Gino_<version>_aarch64.dmg.
+      # Releases use names without spaces or underscores, as before.
+      - name: Name the installer
+        shell: bash
+        run: |
+          version=$(node -p "require('./package.json').version")
+          mkdir -p dist
+          if [ "$RUNNER_OS" = Windows ]; then
+            cp src-tauri/target/release/bundle/nsis/Gino_${version}_*-setup.exe "dist/Gino-Setup-$version.exe"
+          else
+            cp src-tauri/target/release/bundle/dmg/Gino_${version}_*.dmg "dist/Gino-$version-arm64.dmg"
+          fi
       - uses: actions/upload-artifact@v7
         with:
           name: gino-${{ runner.os }}
-          path: |
-            dist/*.exe
-            dist/*.dmg
-            dist/*.zip
+          path: dist/*
           if-no-files-found: error

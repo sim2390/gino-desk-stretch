@@ -76,7 +76,7 @@ export interface ActionReply {
   todayCount?: number;
 }
 
-/** The bridge preload.ts puts on the card window as window.ginoApi. */
+/** The bridge bridge.ts puts on the card window as window.ginoApi, inside the app. */
 export interface GinoApi {
   onShow(cb: (payload: ShowPayload) => void): void;
   onHide(cb: () => void): void;
@@ -85,11 +85,19 @@ export interface GinoApi {
   closed(): void;
 }
 
-/** Where you last dragged the card: its left edge and its bottom edge. */
+/**
+ * Where you last dragged the card: its left edge and its bottom edge, in the units it was
+ * saved in ("physical" pixels on Windows, "logical" points on macOS). Positions without a
+ * unit came from the Electron version and are ignored.
+ */
 export interface CardPos {
   x: number;
   bottom: number;
+  unit?: 'physical' | 'logical';
 }
+
+// settings.json and stats.json are read and written by the app (src-tauri/src/store.rs);
+// these describe the same files for the TypeScript side.
 
 /** settings.json */
 export interface Settings {

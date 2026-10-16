@@ -161,8 +161,8 @@ due waits while:
 The tray tooltip says why Gino is waiting, for example *Holding off: you seem to be on a call*. He
 checks again once a minute and pops up as soon as the moment has passed. To find out whether an app
 has the microphone open, Gino reads the record Windows keeps of which apps are using the microphone
-(the one behind **Settings › Privacy & security › Microphone**). He never listens to or records
-anything.
+(the one behind **Settings › Privacy & security › Microphone**). He asks Windows directly, so
+nothing else starts up to check. He never listens to or records anything.
 
 ## Your data
 
@@ -176,18 +176,27 @@ Gino keeps two small files:
 They live in `%APPDATA%\Gino` on Windows and `~/Library/Application Support/Gino` on macOS. Delete
 them to start fresh: Gino says hello again next time. Gino never connects to the internet.
 
+On Windows, WebView2, which draws the card, also keeps a cache of its own in
+`%LOCALAPPDATA%\com.gino.stretch`.
+
 ## Troubleshooting
 
 **I can't find Gino.**
 On Windows 11, click the **^** arrow next to the clock. Drag Gino from there onto the taskbar. On a
-Mac, look in the menu bar at the top right.
+Mac, look in the menu bar at the top right. Or start Gino again: his welcome card pops up and says
+where he lives.
 
 **Windows says "Windows protected your PC".**
 Gino isn't code-signed yet. Click **More info**, then **Run anyway**.
 
-**macOS says Gino "is damaged" or can't be opened.**
-Right-click Gino in Applications and choose **Open**. If it still says it's damaged, run
-`xattr -cr /Applications/Gino.app` in Terminal once.
+**The installer says the old version of Gino could not be removed.**
+Open **Settings › Apps › Installed apps**, find the older Gino and uninstall it. Your settings and
+counts stay.
+
+**macOS won't open Gino, or says it "is damaged".**
+Gino isn't signed by Apple yet. Open **System Settings › Privacy & Security**, scroll down and click
+**Open Anyway** next to Gino. If macOS says Gino is damaged, run `xattr -cr /Applications/Gino.app`
+in Terminal once, then open it again.
 
 **Gino hasn't popped up for a long time.**
 Hover over his icon to see why. He might be paused, or holding off because an app has the microphone
@@ -202,5 +211,10 @@ puts it back in the main screen's corner.
 His demonstrations always play. If the card itself doesn't slide in and Gino doesn't blink, your
 computer is set to reduce motion; that's on purpose.
 
-**Starting Gino again just opens his menu.**
-Only one Gino runs at a time. Starting him again opens the menu of the one that's already running.
+**Starting Gino again just shows his welcome card.**
+Only one Gino runs at a time. Starting him again shows the welcome card of the one that's already
+running, which says where to find him. If a card is already up, nothing changes.
+
+**I updated Gino and the card is back in its corner.**
+Gino forgets where you dragged the card once, when you update from 0.2. Drag it back and he
+remembers it again.

@@ -2,5 +2,7 @@ node_modules/
 dist/
 build/
 screens/
+src-tauri/target/
+src-tauri/gen/
 .DS_Store
 Thumbs.db

@@ -1,4 +1,5 @@
-# Checks every pull request and every push to main: the types and the tests.
+# Checks every pull request and every push to main: the types and the tests
+# (the TypeScript build, then the Rust unit tests).
 # The installers are built separately, by build.yml.
 name: Check
 
@@ -9,13 +10,20 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    # Windows, where most of Gino's platform code runs.
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      # Keeps the compiled Rust dependencies between runs; the first build of
+      # Tauri takes several minutes.
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - run: npm ci
       - run: npm run typecheck
       - run: npm test

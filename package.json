@@ -1,64 +1,29 @@
 {
   "name": "gino",
   "productName": "Gino",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "A desk stretch coach that lives in your tray. Gino the Gnocchi pops up every 20 minutes of screen time.",
-  "main": "build/main.js",
   "license": "MIT",
   "private": true,
   "scripts": {
     "build": "node scripts/build.mjs",
     "typecheck": "tsc -p .",
-    "start": "npm run build && electron .",
-    "fast": "npm run build && electron . --fast",
-    "test": "npm run build && node build/test/scheduler.test.js && node build/test/placement.test.js",
+    "start": "tauri dev",
+    "fast": "tauri dev -- -- --fast",
+    "test": "npm run build && cargo test --manifest-path src-tauri/Cargo.toml",
     "screens": "npm run build && electron build/dev/screens.js",
-    "dist:win": "npm run build && electron-builder --win portable nsis --publish never",
-    "dist:mac": "npm run build && electron-builder --mac zip dmg --publish never"
+    "dist": "tauri build"
   },
   "dependencies": {
     "@fontsource-variable/shantell-sans": "^5.3.0",
-    "@fontsource/atkinson-hyperlegible": "^5.3.0"
+    "@fontsource/atkinson-hyperlegible": "^5.3.0",
+    "@tauri-apps/api": "^2.12.4"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.12.3",
     "@types/node": "^24.19.2",
     "electron": "^44.8.0",
-    "electron-builder": "^26.15.3",
     "esbuild": "^0.28.2",
     "typescript": "^7.0.2"
-  },
-  "build": {
-    "appId": "com.gino.stretch",
-    "productName": "Gino",
-    "files": [
-      "build/main.js",
-      "build/preload.js",
-      "build/card.js",
-      "src/card.html",
-      "src/card.css",
-      "assets/**"
-    ],
-    "win": {
-      "icon": "assets/icon.ico"
-    },
-    "nsis": {
-      "oneClick": true,
-      "perMachine": false,
-      "artifactName": "${productName}-Setup-${version}.${ext}"
-    },
-    "portable": {
-      "artifactName": "${productName}-${version}-portable.${ext}"
-    },
-    "mac": {
-      "icon": "assets/icon.png",
-      "category": "public.app-category.healthcare-fitness",
-      "target": [
-        "zip",
-        "dmg"
-      ],
-      "extendInfo": {
-        "LSUIElement": true
-      }
-    }
   }
 }

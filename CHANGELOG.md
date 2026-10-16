@@ -1,5 +1,44 @@
 # Changelog
 
+## 0.3.0 (16 October 2026)
+
+- **Much smaller and lighter.** On Windows the download is now about {{INSTALLER_MB}} MB instead of
+  about 100 MB, and Gino takes about {{INSTALLED_MB}} MB once installed instead of about 370 MB. He
+  needs about {{RAM_MB}} MB of memory. He now uses the web engine your computer already has
+  (Microsoft Edge WebView2 on Windows, the system's own on macOS) instead of bringing his own.
+- **The old version is replaced for you.** On Windows, just run the new installer: it closes and
+  removes Gino 0.2, and keeps your settings, your counts and **Start with Windows**. It installs for
+  you alone, so it needs no admin rights. On a Mac, quit Gino and drag the new one into Applications.
+- **Nothing else changes.** Same stretches, same card, same menu. A few small details differ, below.
+
+### Small differences
+
+- If you had dragged the card somewhere, it starts in its corner once after the update. Drag it back
+  and Gino remembers it again.
+- Starting Gino while he's already running shows his welcome card, which says where he lives,
+  instead of opening his menu.
+- On Windows, the check for calls and full-screen apps asks Windows directly, instead of starting
+  PowerShell in the background.
+- There's no portable Windows version any more, just the installer.
+- On a Mac, the first open goes through **System Settings › Privacy & Security › Open Anyway**.
+- On a Mac, Gino's body doesn't bend during chin tucks and thoracic extension; the rest of each move
+  plays.
+
+### For developers
+
+- Gino is now a [Tauri 2](https://v2.tauri.app) app. The tray, the timer, the quiet check and the
+  card window are Rust, in `src-tauri/`. The card is the same TypeScript, shown in the system's web
+  view, and talks to Rust through `src/bridge.ts`.
+- You now need Rust and your system's C++ build tools (see
+  [Development](docs/development.md#setup)). The first `npm start` compiles Tauri, which takes a few
+  minutes.
+- `npm test` runs the Rust tests with `cargo test`, including new ones for screens at different
+  scales and for reading Gino 0.2's files.
+- `npm run dist` replaces `dist:win` and `dist:mac`. The installers land in
+  `src-tauri/target/release/bundle/`, and the build workflow gives them their release names.
+- New switches for test runs: `GINO_DATA_DIR` (a separate settings folder) and `GINO_QUIT_AFTER`.
+- The screens report still uses Electron, as a dev tool only.
+
 ## 0.2.0 (16 October 2026)
 
 ### New

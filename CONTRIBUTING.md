@@ -18,11 +18,13 @@ For anything bigger than a small fix, please open an issue first, so we can agre
 before you spend time on it.
 
 1. Fork the repository and create a branch for your change.
-2. Set it up. You need [Node.js](https://nodejs.org) 22.12 or newer:
+2. Set it up. You need [Node.js](https://nodejs.org) 22.12 or newer, [Rust](https://rustup.rs), and
+   your system's C++ build tools ([Development](docs/development.md#setup) lists them):
    ```
    npm install
    npm start          # or: npm run fast, where minutes become seconds
    ```
+   The first start compiles Tauri, which takes a few minutes.
 3. Make your change, then check it:
    ```
    npm run typecheck
@@ -40,9 +42,10 @@ Keep each pull request to one change. Small pull requests get reviewed and merge
 
 ## Guidelines
 
-- **TypeScript, strict.** The shared shapes are in [`src/types.ts`](src/types.ts). Avoid `any`.
-- **Logic that doesn't need Electron goes in its own module, with tests,** like
-  [`src/scheduler.ts`](src/scheduler.ts) and [`src/placement.ts`](src/placement.ts).
+- **Rust for the app, strict TypeScript for the card.** The app is in [`src-tauri/src`](src-tauri/src).
+  The card's shared shapes are in [`src/types.ts`](src/types.ts). Avoid `any`.
+- **Logic that doesn't need Tauri goes in its own module, with tests,** like
+  [`scheduler.rs`](src-tauri/src/scheduler.rs) and [`placement.rs`](src-tauri/src/placement.rs).
 - **Match the code around you.** Comments explain *why*, not what.
 - **The card keeps one height while the timer runs.** Every height change moves the window.
 - **Gino stays private.** No network access, no accounts, no tracking. Everything stays on the
