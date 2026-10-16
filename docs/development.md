@@ -39,7 +39,7 @@ or the stretches, stop it and start it again.
 | `GINO_FAST=1` or `--fast` | Reminder minutes become seconds (`npm run fast` passes `--fast`). The idle break, the auto-snooze and pauses stay in real minutes. |
 | `GINO_DATA_DIR=<folder>` | Keeps `settings.json` and `stats.json` in that folder instead of the real one. Such a run is a test, and leaves Gino 0.2's login item alone. |
 | `GINO_QUIT_AFTER=<seconds>` | Quits by itself after that many seconds, for test runs. |
-| `GINO_NO_BREAKS=1` | Tests only: ignores idle time, a locked screen and sleep, so cards can be driven on an unattended machine. |
+| `GINO_NO_BREAKS=1` | Tests only: ignores idle time, a locked screen and sleep, and skips the quiet check, so cards can be driven on an unattended machine. |
 
 In PowerShell: `$env:GINO_DATA_DIR = "$env:TEMP\gino-test"; npm start`. In a Mac terminal:
 `GINO_DATA_DIR=/tmp/gino-test npm start`.
@@ -136,7 +136,8 @@ of the monotonic clock and the wall clock, so a Mac that slept still comes back 
   store in the registry for an app that started using the microphone and hasn't stopped. These are
   direct Windows calls through `windows-sys`, with no PowerShell and no extra process. If the moment
   is bad, it re-checks once a minute. If the check fails, the reminder shows anyway.
-- **Breaks.** Lock, sleep, or 5 minutes idle reset the scheduler and put away a visible card.
+- **Breaks.** Lock, sleep, or 5 minutes idle reset the scheduler and put away a visible card. On
+  macOS a lock only counts through idle time (see [macOS](#macos)).
 
 ### The card window
 
@@ -150,10 +151,13 @@ The window is made hidden and loads `index.html`. Rust shows it only once the pa
 20 seconds. The window is frameless, transparent, always on top, out of the taskbar, and has no system
 shadow (the card draws its own). Requests to close it are refused: only Gino puts it away.
 
-- **No network.** On Windows, the card's WebView2 is started with `--disable-background-networking`
-  and `--no-proxy-server`, after wry's own `--disable-features` list (in `card.rs`). Keep them:
-  without them WebView2 contacts Microsoft (`config.edge.skype.com`) every time it starts, and the
-  README promises that Gino never connects to the internet.
+- **No network.** On Windows, the card's WebView2 is started with `--disable-background-networking`,
+  `--disable-component-update` and `--no-proxy-server`, after wry's own `--disable-features` list
+  (`WEBVIEW2_ARGS` in `card.rs`), and a host-resolver rule so nothing resolves. Keep them: without
+  them WebView2 contacts Microsoft (`config.edge.skype.com`) every time it starts, looks for a proxy
+  and downloads component updates, and the README promises that Gino never connects to the
+  internet. `--disable-gpu` is there too, to save memory and CPU: a card this small looks the same
+  drawn without the GPU.
 - **No focus on Windows.** `focusable(false)` makes Tauri keep `WS_EX_NOACTIVATE`, so clicking the
   card doesn't activate it. Tauri's `show()` activates it anyway, so `prepare_card_window()` in
   `platform/windows.rs` installs a `WH_CBT` hook on the card's thread that refuses to activate the
@@ -256,13 +260,15 @@ Their shapes are `Settings` and `Stats` in `store.rs` (and in `src/types.ts`). T
 startup, one field at a time: a field that's missing or the wrong shape takes its default from
 `Settings::default()` without the rest of the file, and unknown fields are skipped. Saves write a
 copy of the state, outside the lock, to a temporary file that is then renamed over the old one.
-Daily counts are trimmed to the last 90 days.
+Daily counts are trimmed to the 90 most recent days that have a count.
 
 ### macOS
 
 - **No quiet check.** `busy_reason()` always says no, so Gino doesn't hold off during calls or
-  full-screen apps, and the menu leaves that item out. `screen_locked()` is always false; a long lock
-  still counts as a break through idle time.
+  full-screen apps, and the menu leaves that item out.
+- **A lock counts after 5 minutes.** `screen_locked()` is always false, so a locked screen only
+  counts as a break through idle time, once it has been locked for 5 minutes. Gino 0.2 counted it
+  straight away.
 - **No bending outline.** Safari's engine doesn't morph CSS `d: path()`, so during chin tucks and
   thoracic extension Gino's outline keeps its shape on a Mac. The rest of each move plays.
 - **24-hour times.** Times in the menu, such as *Paused until 15:30*, are always on a 24-hour clock.

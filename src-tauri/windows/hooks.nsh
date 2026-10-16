@@ -8,8 +8,9 @@
 ; "Start with Windows" over. Settings and stats in %APPDATA%\Gino are never
 ; touched: the new Gino reads the same files.
 ;
-; Uninstalling: keep "Start with Windows" through an upgrade, and make "Delete
-; the application data" include %APPDATA%\Gino.
+; Uninstalling: keep "Start with Windows" through an upgrade, drop its Task
+; Manager switch otherwise, and make "Delete the application data" include
+; %APPDATA%\Gino.
 
 ; Where the Electron installer registered itself. The long name is the id
 ; electron-builder made from com.gino.stretch.
@@ -27,6 +28,7 @@
 Var GinoOldUninstaller   ; ...\Programs\gino\Uninstall Gino.exe
 Var GinoOldDir           ; ...\Programs\gino
 Var GinoStartWithWindows ; installer: 1 = switch "Start with Windows" on at the end
+Var GinoOldRefused       ; installer: 1 = the old uninstall entry wasn't trusted
 Var GinoUpgrading        ; uninstaller: 1 = the installer is replacing this version
 Var GinoRunWasOn         ; uninstaller: 1 = "Start with Windows" was on
 
@@ -37,7 +39,10 @@ Var GinoRunWasOn         ; uninstaller: 1 = "Start with Windows" was on
 !macro NSIS_HOOK_PREINSTALL
   StrCpy $GinoStartWithWindows 0
   !insertmacro GinoRemoveElectronVersion
-  !insertmacro GinoTakeOverElectronStartup
+  ; An old Gino left in place keeps its own "Start with Windows".
+  ${If} $GinoOldRefused <> 1
+    !insertmacro GinoTakeOverElectronStartup
+  ${EndIf}
 !macroend
 
 ; After the files, registry entries and shortcuts are in place. "Start with
@@ -48,7 +53,17 @@ Var GinoRunWasOn         ; uninstaller: 1 = "Start with Windows" was on
   ReadRegDWORD $R0 HKCU "${MANUPRODUCTKEY}" "StartWithWindows"
   DeleteRegValue HKCU "${MANUPRODUCTKEY}" "StartWithWindows"
   ${If} $R0 = 1
+    ; Its Task Manager switch was kept through the upgrade too, and stays.
     StrCpy $GinoStartWithWindows 1
+  ${ElseIf} $GinoStartWithWindows = 1
+    ; Carried over from the Electron Gino, where it was on. A Task Manager
+    ; switch under the new name with no Run entry beside it was left by an
+    ; earlier install, and if it says off it would quietly keep Gino from
+    ; starting.
+    ReadRegStr $R1 HKCU "${GINO_RUN_KEY}" "${PRODUCTNAME}"
+    ${If} $R1 == ""
+      DeleteRegValue HKCU "${GINO_STARTUP_APPROVED_KEY}" "${PRODUCTNAME}"
+    ${EndIf}
   ${EndIf}
   ; Under the product name: the name the new Gino's autostart setting and its
   ; uninstaller use.
@@ -77,12 +92,15 @@ Var GinoRunWasOn         ; uninstaller: 1 = "Start with Windows" was on
   ; Only ever run the uninstaller the Electron installer made, where it made
   ; it. Anyone can write that registry value; anything else it names is not
   ; ours to run. (Comparisons ignore case.)
+  StrCpy $GinoOldRefused 0
   ${If} $GinoOldDir != ""
     ${GetFileName} $GinoOldUninstaller $R1
     ${If} $GinoOldDir != "${GINO_ELECTRON_DIR}"
     ${OrIf} $R1 != "Uninstall Gino.exe"
       DetailPrint "Not removing the old Gino: its uninstall entry points somewhere unexpected ($GinoOldUninstaller)."
+      MessageBox MB_ICONINFORMATION|MB_OK "The old version of Gino could not be removed automatically. You can uninstall it from Settings > Apps." /SD IDOK
       StrCpy $GinoOldDir ""
+      StrCpy $GinoOldRefused 1
     ${EndIf}
   ${EndIf}
 
@@ -167,7 +185,10 @@ Var GinoRunWasOn         ; uninstaller: 1 = "Start with Windows" was on
   Delete "${GINO_DATA_DIR}\declarative_performance_observer.db"
   Delete "${GINO_DATA_DIR}\declarative_performance_observer.db-journal"
   Delete "${GINO_DATA_DIR}\DIPS"
+  Delete "${GINO_DATA_DIR}\DIPS-journal"
+  Delete "${GINO_DATA_DIR}\DIPS-wal"
   Delete "${GINO_DATA_DIR}\Local State"
+  Delete "${GINO_DATA_DIR}\lockfile"
   Delete "${GINO_DATA_DIR}\Preferences"
 !macroend
 
@@ -253,12 +274,17 @@ Var GinoRunWasOn         ; uninstaller: 1 = "Start with Windows" was on
       ${If} $GinoRunWasOn = 1
         WriteRegDWORD HKCU "${MANUPRODUCTKEY}" "StartWithWindows" 1
       ${EndIf}
-    ${ElseIf} $DeleteAppDataCheckboxState = 1
-      ; A real uninstall with "Delete the application data" ticked. Tauri
-      ; removes only the com.gino.stretch folders; Gino's settings and stats
-      ; are in %APPDATA%\Gino (the Electron version's folder, kept on purpose).
-      SetShellVarContext current
-      RMDir /r "${GINO_DATA_DIR}"
+    ${Else}
+      ; A real uninstall. Tauri removes the Run value but not its Task
+      ; Manager switch.
+      DeleteRegValue HKCU "${GINO_STARTUP_APPROVED_KEY}" "${PRODUCTNAME}"
+      ${If} $DeleteAppDataCheckboxState = 1
+        ; "Delete the application data" ticked. Tauri removes only the
+        ; com.gino.stretch folders; Gino's settings and stats are in
+        ; %APPDATA%\Gino (the Electron version's folder, kept on purpose).
+        SetShellVarContext current
+        RMDir /r "${GINO_DATA_DIR}"
+      ${EndIf}
     ${EndIf}
   ${EndIf}
 !macroend

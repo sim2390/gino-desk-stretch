@@ -51,7 +51,7 @@ Every field:
 | `seconds` | How long the timer runs. Not needed with `rep`. |
 | `reps` | How many reps. Shows "Rep 3 of 10" while the timer runs. |
 | `rep` | The parts of one rep, for [guided reps](#guided-reps). |
-| `lead` | Seconds of "Get ready" before the timer. Default 3; `0` for none. |
+| `lead` | Seconds of "Get ready" before the timer; `0` for none. Default 3, or 0 for a stretch marked `walk`. |
 | `ready` | What to do during "Get ready". |
 | `sides` | `true` to switch sides halfway: Gino mirrors and the card says "Other side". Only for a plain timed stretch, not with `rep`. |
 | `walk` | `true` for the walkaround, which takes every third turn. Only the first stretch marked `walk` is used. |

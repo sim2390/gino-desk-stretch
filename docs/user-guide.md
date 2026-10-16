@@ -35,11 +35,11 @@ of them (you can change this), a stretch card pops up.
 These count as a break, and the count starts over:
 
 - 5 minutes without touching the keyboard or mouse
-- locking the screen
+- locking the screen (on a Mac, once it has been locked for 5 minutes)
 - the computer going to sleep
 
-If a card is on screen when you step away for 5 minutes or lock the screen, Gino puts it away and
-starts the count over. You won't come back to a stale card.
+If a card is on screen when you take a break like this, Gino puts it away and starts the count over.
+You won't come back to a stale card.
 
 ## The card
 
@@ -56,7 +56,7 @@ today.
 | **Start** | Runs the guided timer. |
 | **Snooze 10 min** | Hides the card and asks again in 10 minutes. |
 | **Skip** | No stretch this time. The next one comes after a full interval. |
-| **How to** | Opens the steps. While they're open, the card won't snooze itself. |
+| **How to** | Opens the steps. Once you've opened them, the card won't snooze itself. |
 
 <img src="images/how-to.png" width="440" alt="The card with How to open, showing three numbered steps">
 
@@ -171,7 +171,7 @@ Gino keeps two small files:
 | File | What's in it |
 | --- | --- |
 | `settings.json` | Your interval, the hold-off setting, where you dragged the card, and whether you've seen the welcome |
-| `stats.json` | How many stretches you did each day (kept for about three months), and where you are in the rotation |
+| `stats.json` | How many stretches you did each day (kept for the 90 most recent days you stretched), and where you are in the rotation |
 
 They live in `%APPDATA%\Gino` on Windows and `~/Library/Application Support/Gino` on macOS. Delete
 them to start fresh: Gino says hello again next time. Gino never connects to the internet.

@@ -13,6 +13,7 @@ through it.
 
 - **Counts real screen time.** Only the minutes you're actually using the computer count. Step away
   for 5 minutes, lock the screen or let the computer sleep, and that's a break: the count starts over.
+  On a Mac, a locked screen counts once it has been locked for 5 minutes.
 - **Pops up a small card**, bottom right on your main screen. Drag it anywhere you like and it comes
   back to that spot next time.
 - **Seven stretches in rotation:** sit up straight, chin tucks, neck side stretch, eye break, thoracic
@@ -86,7 +87,7 @@ when something doesn't look right.
 
 - Gino keeps two small files on your computer: `settings.json` and `stats.json`. They're in
   `%APPDATA%\Gino` on Windows and `~/Library/Application Support/Gino` on macOS. Daily counts are kept
-  for about three months.
+  for the 90 most recent days you stretched.
 - No accounts, no analytics, no network access.
 - On Windows, **Hold off during calls and full-screen apps** asks Windows whether an app currently has
   the microphone open, and whether Windows itself is holding back notifications (full-screen app,
@@ -95,9 +96,9 @@ when something doesn't look right.
 ## Make it yours
 
 The stretches are a plain list in [`src/exercises.ts`](src/exercises.ts): add, remove or reword them,
-change the timings, or split a stretch into guided reps. A misspelled field or move name shows up as
-an error before Gino even starts. [Customizing Gino](docs/customizing.md)
-explains every field and shows how to preview your changes.
+change the timings, or split a stretch into guided reps. A misspelled field, pose or move shows up as
+an error in your editor and in `npm run typecheck` (`npm start` doesn't check types).
+[Customizing Gino](docs/customizing.md) explains every field and shows how to preview your changes.
 
 ## Run it from the source
 

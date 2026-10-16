@@ -42,11 +42,31 @@ const READY_TIMEOUT: Duration = Duration::from_secs(20);
 /// The card's WebView2 command line. It replaces wry's, so wry's --disable-features list
 /// comes first. Then no network at all: the card is a local page, and without these WebView2
 /// fetches its settings from Microsoft, looks for a proxy and checks for component updates.
-/// Last, software rendering: for a card this small it looks the same, uses about 50 MB less
-/// memory and less CPU while Gino moves than the GPU path does.
+/// Then software rendering: for a card this small it looks the same, uses about 50 MB less
+/// memory and less CPU while Gino moves than the GPU path does. The host rules come last (see
+/// webview2_args).
 #[cfg(windows)]
 const WEBVIEW2_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
      --disable-background-networking --disable-component-update --no-proxy-server --disable-gpu";
+
+/// No host name resolves. Gino's own page and its IPC (tauri.localhost, ipc.localhost) never
+/// go near the network: WebView2 hands those requests to Gino. Anything else is blocked anyway
+/// (the CSP, on_navigation), but a blocked navigation is only cancelled once its request has
+/// started, and WebView2 preconnects to the page's own host; with this neither gets as far as
+/// a DNS lookup or a TCP connection.
+#[cfg(windows)]
+const NO_HOSTS: &str = "MAP * ~NOTFOUND";
+
+/// The card's WebView2 command line, for a page from `dev` (a dev build) or Gino's own.
+#[cfg(windows)]
+fn webview2_args(dev: Option<&Url>) -> String {
+    // A dev build's page comes from the dev server, which has to resolve.
+    let except = dev
+        .and_then(Url::host_str)
+        .map(|host| format!(", EXCLUDE {host}"))
+        .unwrap_or_default();
+    format!("{WEBVIEW2_ARGS} --host-resolver-rules=\"{NO_HOSTS}{except}\"")
+}
 
 /// Placement works in one coordinate space across all screens. On Windows that's physical
 /// pixels. On macOS, tao reports screens scaled by each screen's own scale but windows by the
@@ -144,13 +164,42 @@ fn is_current(app: &AppHandle, win: &WebviewWindow) -> bool {
     current_label(app).as_deref() == Some(win.label())
 }
 
-/// Only Gino's own page: http(s)://tauri.localhost on Windows, tauri://localhost on macOS.
-/// The card has no links, so anything else is something going wrong.
-fn is_own_page(url: &Url) -> bool {
+/// Only Gino's own page: http(s)://tauri.localhost on Windows, tauri://localhost on macOS, and
+/// in a dev build the dev server's page, `dev` (see dev_server). The card has no links, so
+/// anything else is something going wrong.
+fn is_own_page(url: &Url, dev: Option<&Url>) -> bool {
+    if dev.is_some_and(|dev| dev.origin() == url.origin()) {
+        return true;
+    }
     match url.scheme() {
         "tauri" => url.host_str() == Some("localhost"),
         "http" | "https" => url.host_str() == Some("tauri.localhost"),
         _ => false,
+    }
+}
+
+/// Where the page comes from in a dev build (npm start): tauri dev serves build/web itself
+/// (http://127.0.0.1:1430) and passes that on as build.devUrl. A release build has none, so it
+/// only ever allows its own page.
+fn dev_server(app: &AppHandle) -> Option<Url> {
+    if tauri::is_dev() {
+        app.config().build.dev_url.clone()
+    } else {
+        None
+    }
+}
+
+/// The tallest card a page may ask for, in CSS pixels. The tallest real one (the thoracic
+/// stretch with How to open) is about 280.
+const MAX_H: f64 = 640.0;
+
+/// The height to make the window for a card that asks for `height` CSS pixels: the usual one
+/// for nonsense, never more than MAX_H.
+fn card_height(height: f64) -> f64 {
+    if height.is_finite() && height > 0.0 {
+        height.min(MAX_H)
+    } else {
+        WIN_H
     }
 }
 
@@ -168,6 +217,9 @@ fn build(app: &AppHandle, attempt: u64) -> tauri::Result<WebviewWindow> {
     let label = label_for(attempt);
     // At its full width from the start, so the page never lays out squeezed.
     let (width, height) = window_size(WIN_H, platform::text_scale());
+    let dev = dev_server(app);
+    #[cfg(windows)]
+    let browser_args = webview2_args(dev.as_ref());
     let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
         .title("Gino")
         .inner_size(width, height)
@@ -181,7 +233,7 @@ fn build(app: &AppHandle, attempt: u64) -> tauri::Result<WebviewWindow> {
         .minimizable(false)
         .maximizable(false)
         .shadow(false)
-        .on_navigation(is_own_page)
+        .on_navigation(move |url| is_own_page(url, dev.as_ref()))
         .on_page_load(|win, load| {
             // A reload (the page crashed, say) must say it's listening again before it gets
             // the card back.
@@ -201,7 +253,7 @@ fn build(app: &AppHandle, attempt: u64) -> tauri::Result<WebviewWindow> {
     #[cfg(windows)]
     let builder = builder
         .focusable(false)
-        .additional_browser_args(WEBVIEW2_ARGS);
+        .additional_browser_args(&browser_args);
     // macOS: on every desktop, and the first click goes straight to the button.
     #[cfg(target_os = "macos")]
     let builder = builder
@@ -490,15 +542,27 @@ fn reveal(app: &AppHandle, win: &WebviewWindow, payload: &ShowPayload) {
     platform::show_without_focus(win);
 }
 
+/// How long a card's window stays, hidden, before it is destroyed: long enough for WebView2 to
+/// take Gino's answer to the call that put it away (card_closed). Destroyed at once, the page
+/// never got that answer: WebView2 tried the call on the network instead, and Gino's handle
+/// count crept up by one every two or three cards.
+const DESTROY_AFTER: Duration = Duration::from_millis(250);
+
 /// The card is done with: destroy its window (its web view processes go with it), then show
 /// the next one if "Try one now" asked for it. Main thread.
 fn put_away(app: &AppHandle) {
     if let Some(win) = window(app) {
-        // Hidden right away; the destroying itself is queued.
+        // Hidden right away, destroyed a moment later.
         let _ = win.hide();
-        if let Err(e) = win.destroy() {
-            eprintln!("Could not close the card window: {e}");
-        }
+        thread::spawn(move || {
+            thread::sleep(DESTROY_AFTER);
+            let w = win.clone();
+            let _ = win.run_on_main_thread(move || {
+                if let Err(e) = w.destroy() {
+                    eprintln!("Could not close the card window: {e}");
+                }
+            });
+        });
     }
     let gino = app.state::<Gino>();
     let again = {
@@ -516,7 +580,7 @@ fn put_away(app: &AppHandle) {
     if again {
         let handle = app.clone();
         thread::spawn(move || {
-            thread::sleep(Duration::from_millis(300));
+            thread::sleep(DESTROY_AFTER + Duration::from_millis(300));
             show_stretch(&handle);
         });
     }
@@ -644,15 +708,10 @@ pub fn card_action(
 /// The card needs the window this tall (the page's CSS pixels, shadow room included).
 #[tauri::command]
 pub fn card_resize(app: AppHandle, window: WebviewWindow, height: f64) {
-    let height = if height.is_finite() && height > 0.0 {
-        height
-    } else {
-        WIN_H
-    };
     if !is_current(&app, &window) {
         return; // a window on its way out
     }
-    place(&app, &window, height);
+    place(&app, &window, card_height(height));
 }
 
 /// The close animation finished.
@@ -794,7 +853,7 @@ mod tests {
 
     #[test]
     fn the_card_may_only_be_on_gino_s_own_page() {
-        let ok = |u: &str| is_own_page(&Url::parse(u).unwrap());
+        let ok = |u: &str| is_own_page(&Url::parse(u).unwrap(), None);
         assert!(ok("http://tauri.localhost/index.html"));
         assert!(ok("https://tauri.localhost/index.html"));
         assert!(ok("tauri://localhost/index.html"));
@@ -804,5 +863,45 @@ mod tests {
         assert!(!ok("file:///C:/Windows/win.ini"));
         assert!(!ok("about:blank"));
         assert!(!ok("javascript:alert(1)"));
+        // Without a dev server, a local server's page is someone else's.
+        assert!(!ok("http://127.0.0.1:1430/index.html"));
+    }
+
+    #[test]
+    fn a_dev_build_also_allows_its_dev_server_and_nothing_else() {
+        let dev = Url::parse("http://127.0.0.1:1430/").unwrap();
+        let ok = |u: &str| is_own_page(&Url::parse(u).unwrap(), Some(&dev));
+        assert!(ok("http://127.0.0.1:1430/index.html"));
+        assert!(ok("http://tauri.localhost/index.html"));
+        assert!(!ok("http://127.0.0.1:1431/index.html"));
+        assert!(!ok("https://127.0.0.1:1430/index.html"));
+        assert!(!ok("http://localhost:1430/index.html"));
+        assert!(!ok("https://example.com/"));
+    }
+
+    #[test]
+    fn a_card_is_never_taller_than_the_tallest_one_could_be() {
+        assert_eq!(card_height(280.0), 280.0);
+        assert_eq!(card_height(5000.0), MAX_H);
+        assert_eq!(card_height(f64::INFINITY), WIN_H);
+        assert_eq!(card_height(f64::NAN), WIN_H);
+        assert_eq!(card_height(0.0), WIN_H);
+        assert_eq!(card_height(-10.0), WIN_H);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn no_host_resolves_except_a_dev_server() {
+        let release = webview2_args(None);
+        assert!(release.starts_with(WEBVIEW2_ARGS), "{release}");
+        assert!(
+            release.ends_with(r#" --host-resolver-rules="MAP * ~NOTFOUND""#),
+            "{release}"
+        );
+        let dev = webview2_args(Some(&Url::parse("http://127.0.0.1:1430/").unwrap()));
+        assert!(
+            dev.ends_with(r#" --host-resolver-rules="MAP * ~NOTFOUND, EXCLUDE 127.0.0.1""#),
+            "{dev}"
+        );
     }
 }

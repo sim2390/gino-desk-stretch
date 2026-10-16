@@ -25,6 +25,8 @@
 - On a Mac, Gino's body doesn't bend during chin tucks and thoracic extension; the rest of each move
   plays.
 - On a Mac, times in the menu, such as *Paused until 15:30*, are always on a 24-hour clock.
+- On a Mac, locking the screen counts as a break once it has been locked for 5 minutes, instead of
+  straight away.
 
 ### For developers
 
@@ -32,8 +34,8 @@
   card window are Rust, in `src-tauri/`. The card is the same TypeScript, shown in the system's web
   view, and talks to Rust through `src/bridge.ts`.
 - The card window is made for each card and destroyed afterwards, so the web view only runs while a
-  card is up. On Windows it runs with background networking off, so Gino still makes no network
-  connections.
+  card is up. On Windows it runs with background networking off, so Gino still never connects to
+  the internet.
 - The Windows installer carries Microsoft's signed WebView2 bootstrapper instead of downloading it.
 - You now need Rust and your system's C++ build tools (see
   [Development](docs/development.md#setup)). The first `npm start` compiles Tauri, which takes a few
@@ -43,7 +45,8 @@
 - `npm run dist` replaces `dist:win` and `dist:mac`. The installers land in
   `src-tauri/target/release/bundle/`, and the build workflow gives them their release names.
 - New switches for test runs: `GINO_DATA_DIR` (a separate settings folder), `GINO_QUIT_AFTER`, and
-  `GINO_NO_BREAKS=1` (ignore idle time, a locked screen and sleep, for unattended machines).
+  `GINO_NO_BREAKS=1` (ignore idle time, a locked screen and sleep, and skip the quiet check, for
+  unattended machines).
 - The checks on every pull request also run `cargo fmt --check` and `cargo clippy -D warnings`, and
   can be started by hand on any branch.
 - The screens report still uses Electron, as a dev tool only.

@@ -4,6 +4,7 @@
 use std::ffi::{c_void, OsStr};
 use std::mem::size_of;
 use std::os::windows::ffi::OsStrExt;
+use std::path::{Component, Path, Prefix};
 use std::ptr::{null, null_mut};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -202,10 +203,15 @@ const LOGIN_VALUE: &str = "Gino";
 const STARTUP_APPROVED_KEY: &str =
     r"Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run";
 const STRING: REG_ROUTINE_FLAGS = RRF_RT_REG_SZ | RRF_RT_REG_EXPAND_SZ | RRF_NOEXPAND;
+// The same, with any %VARIABLES% in an "expandable" value filled in, as Windows does when
+// it runs it.
+const EXPANDED: REG_ROUTINE_FLAGS = RRF_RT_REG_SZ;
 
-/// "Start with Windows" is on: the Run value is there and not switched off in Task Manager.
+/// "Start with Windows" is on: the Run value starts this gino.exe and isn't switched off in
+/// Task Manager. One that starts another gino.exe (a dev build, an old or moved install, a
+/// file that's gone) counts as off, so ticking the item points it here.
 pub fn login_item_enabled<R: Runtime>(_app: &AppHandle<R>) -> bool {
-    login_enabled(LOGIN_VALUE)
+    std::env::current_exe().is_ok_and(|exe| login_enabled(LOGIN_VALUE, &exe))
 }
 
 /// Switch "Start with Windows" on (for this gino.exe) or off.
@@ -214,8 +220,64 @@ pub fn set_login_item<R: Runtime>(_app: &AppHandle<R>, enabled: bool) -> Result<
     set_login(LOGIN_VALUE, exe.as_os_str(), enabled)
 }
 
-fn login_enabled(name: &str) -> bool {
-    hkcu_value(RUN_KEY, name, STRING).is_some() && !switched_off(name)
+fn login_enabled(name: &str, exe: &Path) -> bool {
+    hkcu_value(RUN_KEY, name, EXPANDED).is_some_and(|d| runs_exe(&utf16_text(&d), exe))
+        && !switched_off(name)
+}
+
+/// The Run command starts `exe`. Only the text is compared, never the files: this runs with
+/// every tray update, and a path on a network drive that's away could take seconds to check.
+fn runs_exe(command: &str, exe: &Path) -> bool {
+    let target = Path::new(run_target(command));
+    target.is_absolute() && path_key(target) == path_key(exe)
+}
+
+/// The program in a Run command: what's in the leading quotes, or without quotes the text up
+/// to the first ".exe" that ends a word (Windows tries each space in an unquoted path).
+fn run_target(command: &str) -> &str {
+    let command = command.trim();
+    if let Some(quoted) = command.strip_prefix('"') {
+        return quoted.split('"').next().unwrap_or_default();
+    }
+    // ASCII lowercase keeps every byte where it was, so the index fits the original too.
+    let lower = command.to_ascii_lowercase();
+    let end = lower
+        .match_indices(".exe")
+        .map(|(i, ext)| i + ext.len())
+        .find(|&end| lower[end..].chars().next().is_none_or(char::is_whitespace));
+    end.map_or(command, |end| &command[..end])
+}
+
+/// A path as Windows reads it, for comparing: either slash, a doubled one, "." and "..",
+/// a "\\?\" in front and the case of the letters make no difference.
+fn path_key(path: &Path) -> String {
+    let mut key = String::new();
+    let mut names = Vec::new();
+    for part in path.components() {
+        match part {
+            Component::Prefix(p) => {
+                key = match p.kind() {
+                    Prefix::Disk(d) | Prefix::VerbatimDisk(d) => format!("{}:", char::from(d)),
+                    Prefix::UNC(server, share) | Prefix::VerbatimUNC(server, share) => format!(
+                        r"\\{}\{}",
+                        server.to_string_lossy(),
+                        share.to_string_lossy()
+                    ),
+                    _ => p.as_os_str().to_string_lossy().into_owned(),
+                }
+            }
+            Component::RootDir | Component::CurDir => {}
+            Component::ParentDir => {
+                names.pop();
+            }
+            Component::Normal(name) => names.push(name.to_string_lossy()),
+        }
+    }
+    for name in names {
+        key.push('\\');
+        key.push_str(&name);
+    }
+    key.to_lowercase()
 }
 
 fn switched_off(name: &str) -> bool {
@@ -230,11 +292,7 @@ fn approved_off(data: &[u8]) -> bool {
 
 fn set_login(name: &str, exe: &OsStr, enabled: bool) -> Result<(), String> {
     if enabled {
-        let data: Vec<u8> = run_command(exe)
-            .iter()
-            .flat_map(|c| c.to_le_bytes())
-            .collect();
-        set_hkcu_value(RUN_KEY, name, REG_SZ, &data)?;
+        set_hkcu_value(RUN_KEY, name, REG_SZ, &utf16_bytes(&run_command(exe)))?;
         // Switched off in Task Manager, it still wouldn't start: clear that so the tick counts.
         if switched_off(name) {
             delete_hkcu_value(STARTUP_APPROVED_KEY, name)?;
@@ -260,12 +318,18 @@ fn run_command(exe: &OsStr) -> Vec<u16> {
 
 const LEGACY_RUN_VALUE: &str = "com.gino.stretch";
 
-/// Remove the HKCU Run entry the Electron version may have left behind.
+/// Remove the HKCU Run entry the Electron version may have left behind, and its switch in
+/// Task Manager.
 pub fn remove_legacy_login_item() {
+    remove_electron_login(LEGACY_RUN_VALUE);
+}
+
+fn remove_electron_login(name: &str) {
     // Only an entry that starts Electron Gino: leave anything else under that name alone.
-    let command = hkcu_value(RUN_KEY, LEGACY_RUN_VALUE, STRING).map(|d| utf16_text(&d));
-    if command.is_some_and(|c| is_electron_gino(&c)) {
-        let _ = delete_hkcu_value(RUN_KEY, LEGACY_RUN_VALUE);
+    let command = hkcu_value(RUN_KEY, name, STRING).map(|d| utf16_text(&d));
+    // The switch only once the entry is gone: one left behind stays as it was switched.
+    if command.is_some_and(|c| is_electron_gino(&c)) && delete_hkcu_value(RUN_KEY, name).is_ok() {
+        let _ = delete_hkcu_value(STARTUP_APPROVED_KEY, name);
     }
 }
 
@@ -360,6 +424,11 @@ fn utf16_text(data: &[u8]) -> String {
     String::from_utf16_lossy(&units)
 }
 
+/// UTF-16 text as the bytes the registry stores.
+fn utf16_bytes(units: &[u16]) -> Vec<u8> {
+    units.iter().flat_map(|c| c.to_le_bytes()).collect()
+}
+
 fn wide(s: &str) -> Vec<u16> {
     s.encode_utf16().chain(Some(0)).collect()
 }
@@ -431,7 +500,7 @@ impl Drop for Key {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use windows_sys::Win32::System::Registry::REG_BINARY;
+    use windows_sys::Win32::System::Registry::{REG_BINARY, REG_EXPAND_SZ};
     use windows_sys::Win32::UI::Input::KeyboardAndMouse::GetActiveWindow;
     use windows_sys::Win32::UI::WindowsAndMessaging::{
         CreateWindowExW, DestroyWindow, SW_SHOW, WS_POPUP,
@@ -471,14 +540,93 @@ mod tests {
         let expected = wide(r#""C:\Users\John Smith\AppData\Local\Gino\gino.exe""#);
         assert_eq!(run_command(exe), expected);
         // The same bytes the installer writes, read back as text.
-        let bytes: Vec<u8> = run_command(exe)
-            .iter()
-            .flat_map(|c| c.to_le_bytes())
-            .collect();
         assert_eq!(
-            utf16_text(&bytes),
+            utf16_text(&utf16_bytes(&run_command(exe))),
             r#""C:\Users\John Smith\AppData\Local\Gino\gino.exe""#
         );
+        // And what it writes starts the exe it was written for.
+        assert!(runs_exe(
+            &utf16_text(&utf16_bytes(&run_command(exe))),
+            Path::new(exe)
+        ));
+    }
+
+    #[test]
+    fn finds_the_program_in_a_run_command() {
+        let gino = r"C:\Users\John Smith\Gino\gino.exe";
+        assert_eq!(run_target(&format!("\"{gino}\"")), gino);
+        assert_eq!(run_target(&format!("  \"{gino}\" --hidden  ")), gino);
+        assert_eq!(run_target(&format!("\"{gino}")), gino);
+        // Without quotes, as the autostart plugin writes it: up to the ".exe", spaces and all.
+        assert_eq!(run_target(gino), gino);
+        assert_eq!(run_target(&format!("{gino} --minimized")), gino);
+        assert_eq!(
+            run_target(r"C:\My.exes\GINO.EXE /x"),
+            r"C:\My.exes\GINO.EXE"
+        );
+        assert_eq!(run_target(r"C:\Gino\gino"), r"C:\Gino\gino");
+        assert_eq!(run_target(""), "");
+        assert_eq!(run_target("\"\""), "");
+    }
+
+    #[test]
+    fn start_with_windows_is_on_only_for_this_gino_exe() {
+        let exe = Path::new(r"C:\Users\John Smith\AppData\Local\Gino\gino.exe");
+        let on = |command: &str| runs_exe(command, exe);
+
+        // What Gino and the installer write, and the autostart plugin's unquoted form.
+        assert!(on(r#""C:\Users\John Smith\AppData\Local\Gino\gino.exe""#));
+        assert!(on(r"C:\Users\John Smith\AppData\Local\Gino\gino.exe"));
+        assert!(on(
+            r#""C:\Users\John Smith\AppData\Local\Gino\gino.exe" --autostart"#
+        ));
+        assert!(on(
+            r"C:\Users\John Smith\AppData\Local\Gino\gino.exe --autostart"
+        ));
+        // Spelled differently, the same file to Windows.
+        assert!(on(r#""c:\users\JOHN SMITH\appdata\local\gino\GINO.EXE""#));
+        assert!(on(r#""C:/Users/John Smith/AppData/Local/Gino/gino.exe""#));
+        assert!(on(r#""C:\Users\John Smith\\AppData\Local\Gino\gino.exe""#));
+        assert!(on(r#""C:\Users\John Smith\AppData\.\Local\Gino\gino.exe""#));
+        assert!(on(
+            r#""C:\Users\John Smith\AppData\Roaming\..\Local\Gino\gino.exe""#
+        ));
+        assert!(on(
+            r#""\\?\C:\Users\John Smith\AppData\Local\Gino\gino.exe""#
+        ));
+
+        // Another gino.exe: a dev build, the Electron one, another install folder, a near miss.
+        assert!(!on(
+            r#""C:\Users\John Smith\code\gino\src-tauri\target\release\gino.exe""#
+        ));
+        assert!(!on(
+            r#""C:\Users\John Smith\AppData\Local\Programs\gino\Gino.exe""#
+        ));
+        assert!(!on(r#""C:\Program Files\Gino\gino.exe""#));
+        assert!(!on(r#""D:\Users\John Smith\AppData\Local\Gino\gino.exe""#));
+        assert!(!on(
+            r#""C:\Users\John Smith\AppData\Local\Gino\gino.exe.bak""#
+        ));
+        assert!(!on(r#""C:\Users\John Smith\AppData\Local\Gino""#));
+        // Not a full path: Windows wouldn't look in Gino's folder for it.
+        assert!(!on("gino.exe"));
+        assert!(!on(r"Users\John Smith\AppData\Local\Gino\gino.exe"));
+        assert!(!on(r"\Users\John Smith\AppData\Local\Gino\gino.exe"));
+        assert!(!on(""));
+        assert!(!on("\"\""));
+
+        // This exe can come with a "\\?\" too, and live on a share.
+        let verbatim = Path::new(r"\\?\C:\Gino\gino.exe");
+        assert!(runs_exe(r#""C:\Gino\gino.exe""#, verbatim));
+        let share = Path::new(r"\\?\UNC\server\apps\Gino\gino.exe");
+        assert!(runs_exe(r#""\\server\apps\Gino\gino.exe""#, share));
+        assert!(runs_exe(r#""\\SERVER\Apps\Gino\gino.exe""#, share));
+        assert!(!runs_exe(r#""\\other\apps\Gino\gino.exe""#, share));
+        assert!(!runs_exe(r#""C:\server\apps\Gino\gino.exe""#, share));
+
+        // The real path of this test program matches itself.
+        let me = std::env::current_exe().unwrap();
+        assert!(runs_exe(&format!("\"{}\"", me.display()), &me));
     }
 
     #[test]
@@ -503,25 +651,36 @@ mod tests {
         }
     }
 
-    // Writes to this user's real Run key, under a test name (never "Gino" or
-    // "com.gino.stretch"), pointing at a program that doesn't exist. Run it on purpose:
+    /// A Run value and its Task Manager switch, as stored.
+    type Entry = (Option<Vec<u8>>, Option<Vec<u8>>);
+    fn entry(name: &str) -> Entry {
+        (
+            hkcu_value(RUN_KEY, name, STRING),
+            hkcu_value(STARTUP_APPROVED_KEY, name, RRF_RT_REG_BINARY),
+        )
+    }
+
+    /// Gino's real entries, which these tests read and must leave as they were.
+    fn real_entries() -> (Entry, Entry) {
+        (entry(LOGIN_VALUE), entry(LEGACY_RUN_VALUE))
+    }
+
+    const SWITCHED_OFF: [u8; 12] = [3, 0, 0, 0, 0x10, 0x2f, 0x5c, 0x41, 0x7e, 0x3e, 0xdb, 0x01];
+
+    // The two tests below write to this user's real Run key, under test names (never "Gino"
+    // or "com.gino.stretch"), pointing at programs that don't exist. Run them on purpose:
     //   cargo test --lib login -- --ignored
     #[test]
     #[ignore]
     fn login_item_round_trip_in_the_real_registry() {
         const NAME: &str = "GinoLoginItemTest";
-        let real = |v: &str| {
-            (
-                hkcu_value(RUN_KEY, v, STRING),
-                hkcu_value(STARTUP_APPROVED_KEY, v, RRF_RT_REG_BINARY),
-            )
-        };
-        let before = (real(LOGIN_VALUE), real(LEGACY_RUN_VALUE));
+        let before = real_entries();
         let exe = OsStr::new(r"C:\Gino Login Test\does-not-exist.exe");
+        let other_exe = Path::new(r"C:\Gino Login Test\Old\does-not-exist.exe");
         let _cleanup = Cleanup(NAME);
         delete_hkcu_value(RUN_KEY, NAME).unwrap();
         delete_hkcu_value(STARTUP_APPROVED_KEY, NAME).unwrap();
-        assert!(!login_enabled(NAME));
+        assert!(!login_enabled(NAME, Path::new(exe)));
 
         set_login(NAME, exe, true).unwrap();
         let text = hkcu_value(RUN_KEY, NAME, STRING).map(|d| utf16_text(&d));
@@ -529,30 +688,80 @@ mod tests {
             text.as_deref(),
             Some(r#""C:\Gino Login Test\does-not-exist.exe""#)
         );
-        assert!(login_enabled(NAME));
+        assert!(login_enabled(NAME, Path::new(exe)));
+        // On for that exe only: another one sees it as off.
+        assert!(!login_enabled(NAME, other_exe));
+
+        // Ticking it from the other exe points the entry there.
+        set_login(NAME, other_exe.as_os_str(), true).unwrap();
+        assert!(login_enabled(NAME, other_exe));
+        assert!(!login_enabled(NAME, Path::new(exe)));
+        set_login(NAME, exe, true).unwrap();
+        assert!(login_enabled(NAME, Path::new(exe)));
+
+        // An "expandable" value counts with its %VARIABLES% filled in, as Windows runs it.
+        let root = std::env::var("SystemRoot").unwrap();
+        let expandable = wide(r#""%SystemRoot%\Gino Login Test\does-not-exist.exe""#);
+        set_hkcu_value(RUN_KEY, NAME, REG_EXPAND_SZ, &utf16_bytes(&expandable)).unwrap();
+        let expanded = format!(r"{root}\Gino Login Test\does-not-exist.exe");
+        assert!(login_enabled(NAME, Path::new(&expanded)));
+        assert!(!login_enabled(NAME, Path::new(exe)));
+        set_login(NAME, exe, true).unwrap();
 
         // Switched off in Task Manager.
-        let off = [3, 0, 0, 0, 0x10, 0x2f, 0x5c, 0x41, 0x7e, 0x3e, 0xdb, 0x01];
-        set_hkcu_value(STARTUP_APPROVED_KEY, NAME, REG_BINARY, &off).unwrap();
-        assert!(!login_enabled(NAME));
+        set_hkcu_value(STARTUP_APPROVED_KEY, NAME, REG_BINARY, &SWITCHED_OFF).unwrap();
+        assert!(!login_enabled(NAME, Path::new(exe)));
 
         // Ticking it again really turns it on.
         set_login(NAME, exe, true).unwrap();
         assert!(hkcu_value(STARTUP_APPROVED_KEY, NAME, RRF_RT_REG_BINARY).is_none());
-        assert!(login_enabled(NAME));
+        assert!(login_enabled(NAME, Path::new(exe)));
 
         // Switched on in Task Manager is fine as it is.
         let on = [2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         set_hkcu_value(STARTUP_APPROVED_KEY, NAME, REG_BINARY, &on).unwrap();
-        assert!(login_enabled(NAME));
+        assert!(login_enabled(NAME, Path::new(exe)));
 
         // Off leaves nothing behind, and twice is fine.
         set_login(NAME, exe, false).unwrap();
         set_login(NAME, exe, false).unwrap();
-        assert!(!login_enabled(NAME));
-        assert_eq!(real(NAME), (None, None));
+        assert!(!login_enabled(NAME, Path::new(exe)));
+        assert_eq!(entry(NAME), (None, None));
 
-        assert_eq!((real(LOGIN_VALUE), real(LEGACY_RUN_VALUE)), before);
+        assert_eq!(real_entries(), before);
+    }
+
+    #[test]
+    #[ignore]
+    fn electron_login_item_goes_with_its_task_manager_switch() {
+        const NAME: &str = "GinoLegacyLoginItemTest";
+        let before = real_entries();
+        let _cleanup = Cleanup(NAME);
+        let write = |command: &str| {
+            set_hkcu_value(RUN_KEY, NAME, REG_SZ, &utf16_bytes(&wide(command))).unwrap();
+            set_hkcu_value(STARTUP_APPROVED_KEY, NAME, REG_BINARY, &SWITCHED_OFF).unwrap();
+        };
+
+        // Something else under that name stays, switch and all.
+        write(r#""C:\Gino Login Test\does-not-exist.exe""#);
+        remove_electron_login(NAME);
+        let (run, switch) = entry(NAME);
+        assert!(run.is_some());
+        assert_eq!(switch.as_deref(), Some(&SWITCHED_OFF[..]));
+
+        // Electron Gino's goes, switch and all, installed or run from source.
+        write(r#""C:\Gino Login Test\AppData\Local\Programs\gino\Gino.exe""#);
+        remove_electron_login(NAME);
+        assert_eq!(entry(NAME), (None, None));
+        write(r#""C:\Gino Login Test\electron.exe" "C:\Gino Login Test\gino""#);
+        remove_electron_login(NAME);
+        assert_eq!(entry(NAME), (None, None));
+
+        // Nothing there: nothing to do.
+        remove_electron_login(NAME);
+        assert_eq!(entry(NAME), (None, None));
+
+        assert_eq!(real_entries(), before);
     }
 
     #[test]
