@@ -76,5 +76,6 @@ for (const [from, to] of FONTS) swap(`href="../node_modules/${from}"`, `href="fo
 swap('<script src="../build/card.js"></script>', '<script src="card.js"></script>', 'the card.js script tag');
 writeFileSync(`${WEB}/index.html`, page);
 copyFileSync('src/card.css', `${WEB}/card.css`);
-// The source map stays in build/, so drop the line pointing to it.
-writeFileSync(`${WEB}/card.js`, readFileSync('build/card.js', 'utf8').replace(/\n\/\/# sourceMappingURL=\S*\s*$/, '\n'));
+// The card's script again, minified, as it's compiled into the app. build/card.js stays
+// readable for the dev pages and the screens report.
+await build({ ...browser, entryPoints: ['src/card.ts'], outfile: `${WEB}/card.js`, minify: true, sourcemap: false });

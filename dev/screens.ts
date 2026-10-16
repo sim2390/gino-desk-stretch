@@ -558,7 +558,6 @@ function liveHtml(): string {
   window.ginoLive = { show: (key) => onShow && onShow(payload(key || home)) };
   window.ginoApi = {
     onShow: (cb) => { onShow = cb; },
-    onHide: () => {},
     action: (name) => {
       if (name === 'done') return Promise.resolve({ todayCount: ++count });
       if (name === 'trynow') next = FIRST;

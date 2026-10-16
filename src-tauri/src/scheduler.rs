@@ -2,8 +2,6 @@
 // Pure logic with no Tauri types, so it can be tested with plain `cargo test`.
 // All times are milliseconds, and the caller passes the current time in.
 
-#![allow(dead_code)]
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TickStatus {
     Paused,
@@ -124,7 +122,10 @@ mod tests {
 
     impl Rig {
         fn new() -> Self {
-            Rig { s: Scheduler::new(20 * MIN, 5 * MIN), clock: 0 }
+            Rig {
+                s: Scheduler::new(20 * MIN, 5 * MIN),
+                clock: 0,
+            }
         }
 
         /// Tick every 15 seconds for `minutes`, with the keyboard and mouse idle for `idle_ms`.

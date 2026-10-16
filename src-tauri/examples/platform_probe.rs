@@ -3,6 +3,8 @@
 //
 //   cargo run --manifest-path src-tauri/Cargo.toml --example platform_probe -- [times] [seconds]
 
+// The probe calls only the three read-outs; the card window and login item parts go unused.
+#[allow(dead_code)]
 #[path = "../src/platform/mod.rs"]
 mod platform;
 

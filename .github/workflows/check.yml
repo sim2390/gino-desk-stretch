@@ -21,6 +21,8 @@ jobs:
           node-version: 22
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
       # Keeps the compiled Rust dependencies between runs; the first build of
       # Tauri takes several minutes.
       - uses: Swatinem/rust-cache@v2
@@ -28,4 +30,7 @@ jobs:
           workspaces: src-tauri
       - run: npm ci
       - run: npm run typecheck
+      - run: cargo fmt --check --manifest-path src-tauri/Cargo.toml
       - run: npm test
+      # After npm test, which builds the card files the Rust side compiles in.
+      - run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings

@@ -3,37 +3,22 @@
 // there before the card looks for it. Anywhere else (the dev pages, the screens report) it does
 // nothing, and the card runs without window.ginoApi.
 import { invoke } from '@tauri-apps/api/core';
-import type { UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { IPC } from './ipc';
 import type { ActionReply, GinoApi, ShowPayload } from './types';
 
 if ('__TAURI_INTERNALS__' in window) {
-  const page = getCurrentWebviewWindow();
   const report = (e: unknown) => console.error(e);
-
-  // Listeners still being registered with the Rust side.
-  const listening: Promise<UnlistenFn>[] = [];
-  const listen = <T>(event: string, cb: (payload: T) => void) => {
-    const p = page.listen<T>(event, (e) => cb(e.payload));
-    listening.push(p);
-    return p;
-  };
 
   const api: GinoApi = {
     onShow(cb) {
       // Say we're ready only once the listener is in place: Rust holds a card back until
-      // then, so a show can't arrive while nobody is listening. The wait also covers the
-      // hide listener, which card.ts sets up straight after this one.
-      (async () => {
-        await listen<ShowPayload>(IPC.show, cb);
-        await Promise.all(listening);
-        await invoke(IPC.ready);
-      })().catch(report);
-    },
-    onHide(cb) {
-      listen<null>(IPC.hide, () => cb()).catch(report);
+      // then, so a show can't arrive while nobody is listening.
+      getCurrentWebviewWindow()
+        .listen<ShowPayload>(IPC.show, (e) => cb(e.payload))
+        .then(() => invoke(IPC.ready))
+        .catch(report);
     },
     action: (name, data) => invoke<ActionReply>(IPC.action, { name, data: data ?? {} }),
     resize(height) {
@@ -52,5 +37,16 @@ if ('__TAURI_INTERNALS__' in window) {
     if (e.button !== 0 || !t || !t.closest('.card') || t.closest('button, a')) return;
     e.preventDefault(); // no text cursor or selection while dragging
     getCurrentWindow().startDragging().catch(report);
+  });
+
+  // No web view menu on right-click (Back, Refresh, Save as, Print...): Refresh would reload
+  // the card, and Print or Save as would take the focus the card never takes.
+  document.addEventListener('contextmenu', (e) => e.preventDefault());
+
+  // The card never takes keyboard focus, so keys shouldn't reach it at all. If one ever does,
+  // it can't run a web view shortcut either (F5 reloads, Ctrl+P prints, Alt+Left goes back):
+  // the card has nothing to type into, and plain Tab, Enter, Space and Esc still work.
+  document.addEventListener('keydown', (e) => {
+    if (e.ctrlKey || e.altKey || e.metaKey || /^(F\d+|Browser\w+)$/.test(e.key)) e.preventDefault();
   });
 }

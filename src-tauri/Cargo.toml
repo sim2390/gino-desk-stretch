@@ -14,9 +14,19 @@ crate-type = ["rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
+# Tauri's defaults minus dynamic-acl (capabilities added at run time, which Gino never does):
+# that leaves every plugin's permission list out of the binary.
+tauri = { version = "2", default-features = false, features = [
+  "wry",
+  "compression",
+  "common-controls-v6",
+  "x11",
+  "dbus",
+  "tray-icon",
+  "image-png",
+  "macos-private-api",
+] }
 tauri-plugin-single-instance = "2"
-tauri-plugin-autostart = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
@@ -31,10 +41,15 @@ windows-sys = { version = "0.60", features = [
   "Win32_UI_WindowsAndMessaging",
 ] }
 
+# "Open at login" on macOS. Windows writes its own Run value (platform/windows.rs).
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-plugin-autostart = "2"
+
 [profile.release]
 codegen-units = 1
 lto = true
-opt-level = "s"
+# Smallest code: Gino does little work, and "z" starts and idles as fast as "s".
+opt-level = "z"
 # Unwind, not abort: the timer loop catches a panic and carries on, and a lock held during one
 # is recovered. With abort, any panic would quit Gino.
 panic = "unwind"

@@ -2,10 +2,8 @@
 export const IPC = {
   // Rust → card: events
 
-  /** show this (a ShowPayload) */
+  /** show this (a ShowPayload). There's no hide: Rust closes the card's window instead. */
   show: 'show',
-  /** put the card away now */
-  hide: 'hide',
 
   // card → Rust: commands
 

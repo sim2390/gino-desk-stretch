@@ -6,7 +6,10 @@
 //   screen_locked()              the screen is locked or the screen saver is on
 //   prepare_card_window(w)       make the card window never take keyboard focus
 //   show_without_focus(w)        show the card window without activating it
+//   text_scale()                 how much bigger than the screen's scale the web view draws (text size)
 //   remove_legacy_login_item()   drop the start-at-login entry the Electron version left behind
+//   login_item_enabled(app)      "Start with Windows" / "Open at login" is on
+//   set_login_item(app, on)      switch it on or off
 
 #[cfg(windows)]
 mod windows;

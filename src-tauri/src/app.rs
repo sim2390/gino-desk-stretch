@@ -131,14 +131,17 @@ pub fn now_ms() -> u64 {
 // ---------- start-up ----------
 
 pub fn run() {
-    let app = tauri::Builder::default()
+    let builder = tauri::Builder::default()
         // First, so a second launch is caught before anything else starts. It shows the
         // welcome card, because that says where Gino lives (unless Gino is still starting:
         // see card::show).
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             card::show_welcome(app)
-        }))
-        .plugin(autostart())
+        }));
+    // "Open at login". Windows writes its own Run value instead (see platform).
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(autostart());
+    let app = builder
         .invoke_handler(tauri::generate_handler![
             card::card_ready,
             card::card_action,
@@ -154,21 +157,24 @@ pub fn run() {
             std::process::exit(1);
         }
     };
-    app.run(|_app, event| {
+    app.run(|_app, event| match event {
         // Keep running in the tray whatever happens to the window; only Quit (which comes
         // with an exit code) ends the app.
-        if let RunEvent::ExitRequested {
+        RunEvent::ExitRequested {
             code: None, api, ..
-        } = event
-        {
-            api.prevent_exit();
-        }
+        } => api.prevent_exit(),
+        // Opening Gino again from Finder or Spotlight while it runs: macOS tells the running
+        // app instead of starting a second one. Like a second launch on Windows, show the
+        // welcome card, which says where Gino lives.
+        #[cfg(target_os = "macos")]
+        RunEvent::Reopen { .. } => card::show_welcome(_app),
+        _ => {}
     });
 }
 
+#[cfg(target_os = "macos")]
 fn autostart() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     let builder = tauri_plugin_autostart::Builder::new().app_name("Gino");
-    #[cfg(target_os = "macos")]
     let builder = builder.macos_launcher(tauri_plugin_autostart::MacosLauncher::LaunchAgent);
     builder.build()
 }
@@ -348,7 +354,8 @@ fn maybe_show(app: &AppHandle) {
         {
             return;
         }
-        s.settings.wait_when_busy
+        // GINO_NO_BREAKS test runs skip it too: on a locked machine it says "screen locked".
+        s.settings.wait_when_busy && !gino.cfg.no_breaks
     };
     // Outside the lock: the check reads the registry and may take a moment.
     let busy = if check { platform::busy_reason() } else { None };

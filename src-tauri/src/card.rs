@@ -6,6 +6,10 @@
 // card is put away. It stays hidden until the page says it is listening (card_ready), so it
 // never flashes up empty.
 //
+// Each card gets a window of its own, labelled card-1, card-2 and so on. Destroying a window
+// takes a moment, and the last card's page can still call in meanwhile; anything from a window
+// that isn't the current card's is ignored.
+//
 // Everything that touches the window runs on the main thread, and never while holding the
 // app's state lock: from another thread, Tauri's window calls wait for the main thread, which
 // may itself be waiting for that lock.
@@ -19,7 +23,7 @@ use serde_json::{json, Value};
 use tauri::webview::PageLoadEvent;
 use tauri::{
     AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, PhysicalPosition, PhysicalSize,
-    Position, Size, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
+    Position, Size, Url, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent,
 };
 
 use crate::app::Gino;
@@ -27,14 +31,22 @@ use crate::placement::{self, Rect, Screen};
 use crate::store::{SavedCardPos, Settings};
 use crate::{platform, tray};
 
-pub const LABEL: &str = "card";
-
+// The window's size in the page's CSS pixels (see window_size).
 const WIN_W: f64 = 440.0; // card 404 + shadow room
 pub const WIN_H: f64 = 214.0;
-const EDGE: f64 = 8.0; // gap to the screen edge
+const EDGE: f64 = 8.0; // gap to the screen edge, in logical pixels
 
 /// A page that hasn't said it's listening by then isn't going to.
 const READY_TIMEOUT: Duration = Duration::from_secs(20);
+
+/// The card's WebView2 command line. It replaces wry's, so wry's --disable-features list
+/// comes first. Then no network at all: the card is a local page, and without these WebView2
+/// fetches its settings from Microsoft, looks for a proxy and checks for component updates.
+/// Last, software rendering: for a card this small it looks the same, uses about 50 MB less
+/// memory and less CPU while Gino moves than the GPU path does.
+#[cfg(windows)]
+const WEBVIEW2_ARGS: &str = "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection \
+     --disable-background-networking --disable-component-update --no-proxy-server --disable-gpu";
 
 /// Placement works in one coordinate space across all screens. On Windows that's physical
 /// pixels. On macOS, tao reports screens scaled by each screen's own scale but windows by the
@@ -46,7 +58,7 @@ const UNIT: &str = if LOGICAL { "logical" } else { "physical" };
 /// The card window's side of the app state (kept in app::Inner, under its lock).
 #[derive(Default)]
 pub struct CardState {
-    /// Counts the cards shown, so late work for an earlier card can tell it's stale.
+    /// Counts the cards shown. The current card's window is labelled after it.
     pub attempt: u64,
     /// The current window's page is listening (it called card_ready).
     pub ready: bool,
@@ -54,9 +66,11 @@ pub struct CardState {
     pub pending: Option<ShowPayload>,
     /// The card on screen, sent again if the page reloads.
     pub current: Option<ShowPayload>,
+    /// This card's stretch has been counted: a second "done" doesn't count again.
+    pub counted: bool,
     /// Where we last put the card, to tell our own moves from your drags.
     pub placed_at: Option<Rect>,
-    /// The height the card last asked for, in logical pixels.
+    /// The height the card last asked for, in the page's CSS pixels.
     pub height: f64,
     /// When this card was asked for (fast mode reports how long it took to appear).
     pub asked_at: Option<Instant>,
@@ -95,8 +109,8 @@ pub fn saved_pos(settings: &Settings) -> Option<placement::CardPos> {
         })
 }
 
-/// Sends window moves to the thread that waits for them to settle (see `settle_moves`).
-pub struct Moves(Sender<()>);
+/// Sends the label of a moved card window to the thread that waits for moves to settle.
+pub struct Moves(Sender<String>);
 
 /// Start the thread that remembers where you drag the card. Once, at start-up.
 pub fn start(app: &AppHandle) {
@@ -108,15 +122,55 @@ pub fn start(app: &AppHandle) {
 
 // ---------- the window ----------
 
-fn window(app: &AppHandle) -> Option<WebviewWindow> {
-    app.get_webview_window(LABEL)
+/// The window label for card number `attempt`. capabilities/default.json matches "card-*".
+fn label_for(attempt: u64) -> String {
+    format!("card-{attempt}")
 }
 
-/// Make the card window, hidden; it loads the page, which calls card_ready.
-fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
-    let builder = WebviewWindowBuilder::new(app, LABEL, WebviewUrl::App("index.html".into()))
+/// The current card's window label, if a card is up (or on its way).
+fn current_label(app: &AppHandle) -> Option<String> {
+    let gino = app.try_state::<Gino>()?;
+    let s = gino.lock();
+    s.card_visible.then(|| label_for(s.card.attempt))
+}
+
+/// The current card's window, if it has one.
+fn window(app: &AppHandle) -> Option<WebviewWindow> {
+    current_label(app).and_then(|label| app.get_webview_window(&label))
+}
+
+/// Whether a call comes from the current card's window.
+fn is_current(app: &AppHandle, win: &WebviewWindow) -> bool {
+    current_label(app).as_deref() == Some(win.label())
+}
+
+/// Only Gino's own page: http(s)://tauri.localhost on Windows, tauri://localhost on macOS.
+/// The card has no links, so anything else is something going wrong.
+fn is_own_page(url: &Url) -> bool {
+    match url.scheme() {
+        "tauri" => url.host_str() == Some("localhost"),
+        "http" | "https" => url.host_str() == Some("tauri.localhost"),
+        _ => false,
+    }
+}
+
+/// The window's size in logical pixels, for a card `height` CSS pixels tall (shadow room
+/// included). WebView2 draws the page bigger by Windows' text size (Settings > Accessibility >
+/// Text size) on top of the screen's scale, so a CSS pixel is `text_scale` logical pixels: the
+/// window grows by as much, and the page still gets its 440 CSS pixels. The card comes out
+/// bigger, laid out the same, like other apps that follow the setting.
+fn window_size(height: f64, text_scale: f64) -> (f64, f64) {
+    (WIN_W * text_scale, height * text_scale)
+}
+
+/// Make the window for card number `attempt`, hidden; it loads the page, which calls card_ready.
+fn build(app: &AppHandle, attempt: u64) -> tauri::Result<WebviewWindow> {
+    let label = label_for(attempt);
+    // At its full width from the start, so the page never lays out squeezed.
+    let (width, height) = window_size(WIN_H, platform::text_scale());
+    let builder = WebviewWindowBuilder::new(app, &label, WebviewUrl::App("index.html".into()))
         .title("Gino")
-        .inner_size(WIN_W, WIN_H)
+        .inner_size(width, height)
         .visible(false)
         .focused(false)
         .transparent(true)
@@ -127,22 +181,27 @@ fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
         .minimizable(false)
         .maximizable(false)
         .shadow(false)
+        .on_navigation(is_own_page)
         .on_page_load(|win, load| {
             // A reload (the page crashed, say) must say it's listening again before it gets
             // the card back.
-            if load.event() == PageLoadEvent::Started {
-                if let Some(gino) = win.app_handle().try_state::<Gino>() {
-                    let mut s = gino.lock();
-                    s.card.ready = false;
-                    if s.card_visible && s.card.pending.is_none() {
-                        s.card.pending = s.card.current.take();
-                    }
+            let app = win.app_handle();
+            if load.event() != PageLoadEvent::Started || !is_current(app, &win) {
+                return;
+            }
+            if let Some(gino) = app.try_state::<Gino>() {
+                let mut s = gino.lock();
+                s.card.ready = false;
+                if s.card.pending.is_none() {
+                    s.card.pending = s.card.current.take();
                 }
             }
         });
     // Windows: never take keyboard focus, so you can't accidentally type into it.
     #[cfg(windows)]
-    let builder = builder.focusable(false);
+    let builder = builder
+        .focusable(false)
+        .additional_browser_args(WEBVIEW2_ARGS);
     // macOS: on every desktop, and the first click goes straight to the button.
     #[cfg(target_os = "macos")]
     let builder = builder
@@ -156,7 +215,7 @@ fn build(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     win.on_window_event(move |event| match event {
         WindowEvent::Moved(_) => {
             if let Some(moved) = &moved {
-                let _ = moved.send(());
+                let _ = moved.send(label.clone());
             }
         }
         // The card has no close button; only Gino puts it away (with destroy, which skips this).
@@ -215,13 +274,14 @@ fn screens(app: &AppHandle) -> Vec<Screen> {
         .collect()
 }
 
-/// Put the card where it goes, `height` logical pixels tall. Main thread.
+/// Put the card where it goes, `height` CSS pixels tall. Main thread.
 fn place(app: &AppHandle, win: &WebviewWindow, height: f64) {
     let screens = screens(app);
+    let (width, tall) = window_size(height, platform::text_scale());
     let gino = app.state::<Gino>();
     let r = {
         let mut s = gino.lock();
-        let r = placement::card_bounds(&screens, saved_pos(&s.settings), WIN_W, height, EDGE);
+        let r = placement::card_bounds(&screens, saved_pos(&s.settings), width, tall, EDGE);
         // Noted before the move, so the move it causes isn't taken for a drag.
         s.card.placed_at = Some(r);
         s.card.height = height;
@@ -254,17 +314,25 @@ fn place(app: &AppHandle, win: &WebviewWindow, height: f64) {
 
 /// Moves come in bursts (all through a drag on macOS, once at the end on Windows), so look
 /// once they settle.
-fn settle_moves(app: AppHandle, moves: Receiver<()>) {
-    while moves.recv().is_ok() {
-        while moves.recv_timeout(Duration::from_millis(300)).is_ok() {}
+fn settle_moves(app: AppHandle, moves: Receiver<String>) {
+    while let Ok(mut label) = moves.recv() {
+        while let Ok(later) = moves.recv_timeout(Duration::from_millis(300)) {
+            label = later;
+        }
         let handle = app.clone();
-        let _ = app.run_on_main_thread(move || remember_pos(&handle));
+        let _ = app.run_on_main_thread(move || remember_pos(&handle, &label));
     }
 }
 
-/// Save where you dragged the card. Main thread.
-fn remember_pos(app: &AppHandle) {
-    let Some(win) = window(app) else { return };
+/// Save where you dragged the card in window `label`, if that's still the current card.
+/// Main thread.
+fn remember_pos(app: &AppHandle, label: &str) {
+    if current_label(app).as_deref() != Some(label) {
+        return;
+    }
+    let Some(win) = app.get_webview_window(label) else {
+        return;
+    };
     let (Ok(pos), Ok(size)) = (win.outer_position(), win.outer_size()) else {
         return;
     };
@@ -358,13 +426,21 @@ fn show(app: &AppHandle, what: What) {
         s.card.ready = false;
         s.card.pending = Some(payload);
         s.card.current = None;
+        s.card.counted = false;
         s.card.asked_at = Some(Instant::now());
         s.card.attempt
     };
     if matches!(what, What::Stretch) {
         gino.save_stats(); // the rotation moved on
     }
-    open_later(app, attempt, Duration::ZERO, 0);
+    // Made from the event loop itself, never inside a command, a menu click or a second
+    // launch's message: on Windows, making a web view inside another one's callback can
+    // deadlock. Hence a thread that queues it.
+    let handle = app.clone();
+    thread::spawn(move || {
+        let h = handle.clone();
+        let _ = handle.run_on_main_thread(move || open(&h, attempt));
+    });
 
     // If the page never says it's listening, give up rather than block every later card.
     let handle = app.clone();
@@ -385,20 +461,8 @@ fn show(app: &AppHandle, what: What) {
     });
 }
 
-/// Queue `open` on the main thread. Always from another thread, so the window is made from
-/// the event loop itself and never inside a command, a menu click or a second launch's
-/// message: on Windows, making a web view inside another one's callback can deadlock.
-fn open_later(app: &AppHandle, attempt: u64, delay: Duration, tries: u32) {
-    let handle = app.clone();
-    thread::spawn(move || {
-        thread::sleep(delay);
-        let h = handle.clone();
-        let _ = handle.run_on_main_thread(move || open(&h, attempt, tries));
-    });
-}
-
 /// Make the window for card `attempt`. Main thread.
-fn open(app: &AppHandle, attempt: u64, tries: u32) {
+fn open(app: &AppHandle, attempt: u64) {
     let gino = app.state::<Gino>();
     {
         let s = gino.lock();
@@ -406,34 +470,20 @@ fn open(app: &AppHandle, attempt: u64, tries: u32) {
             return; // put away before it got here
         }
     }
-    if let Some(old) = window(app) {
-        // The last card's window is still going away (destroying it is queued): wait for it.
-        if tries < 40 {
-            open_later(app, attempt, Duration::from_millis(50), tries + 1);
-        } else {
-            eprintln!("The last card window won't go away; skipping this card.");
-            let _ = old.destroy();
-            gino.lock().card_visible = false;
-            tray::update(app);
-        }
-        return;
-    }
-    if let Err(e) = build(app) {
+    if let Err(e) = build(app, attempt) {
         eprintln!("Could not make the card window: {e}");
         {
             let mut s = gino.lock();
             s.card_visible = false;
             s.card.pending = None;
         }
-        tray::update(app);
-        return;
     }
     tray::update(app);
 }
 
 /// Hand the page its card, put the window in place and show it. Main thread.
 fn reveal(app: &AppHandle, win: &WebviewWindow, payload: &ShowPayload) {
-    if let Err(e) = app.emit_to(LABEL, "show", payload) {
+    if let Err(e) = app.emit_to(win.label(), "show", payload) {
         eprintln!("Could not send the card: {e}");
     }
     place(app, win, WIN_H);
@@ -502,25 +552,29 @@ fn welcome_card(settings: &Settings) -> Value {
 }
 
 // ---------- commands from the card page ----------
-// Not async, so Tauri runs them on the main thread.
+// Not async, so Tauri runs them on the main thread. Each takes the window it came from and
+// ignores anything but the current card's.
 
 /// The page is listening: send the card that's waiting, and show the window.
 #[tauri::command]
-pub fn card_ready(app: AppHandle) {
+pub fn card_ready(app: AppHandle, window: WebviewWindow) {
+    if !is_current(&app, &window) {
+        return;
+    }
     let gino = app.state::<Gino>();
     let (payload, asked_at) = {
         let mut s = gino.lock();
         s.card.ready = true;
-        let payload = s.card.pending.take().filter(|_| s.card_visible);
+        let payload = s.card.pending.take();
         if payload.is_some() {
             s.card.current.clone_from(&payload);
         }
         (payload, s.card.asked_at.take())
     };
-    let (Some(payload), Some(win)) = (payload, window(&app)) else {
+    let Some(payload) = payload else {
         return;
     };
-    reveal(&app, &win, &payload);
+    reveal(&app, &window, &payload);
     if let (true, Some(t)) = (gino.cfg.fast, asked_at) {
         println!(
             "Gino fast mode: card up {} ms after it was asked for.",
@@ -530,64 +584,83 @@ pub fn card_ready(app: AppHandle) {
 }
 
 /// What you did on the card. `data` is { id }, { auto } or {}, and nothing here needs it.
+/// Only the card on screen counts, a stretch is counted once however often "done" comes, and
+/// "Try one now" only comes from the welcome card.
 #[tauri::command]
-pub fn card_action(app: AppHandle, name: String, data: Option<Value>) -> ActionReply {
+pub fn card_action(
+    app: AppHandle,
+    window: WebviewWindow,
+    name: String,
+    data: Option<Value>,
+) -> ActionReply {
     let _ = data;
+    if !is_current(&app, &window) {
+        return ActionReply::default();
+    }
     let gino = app.state::<Gino>();
+    let mut counted = false;
     let reply = {
         let mut s = gino.lock();
+        let Some(mode) = s.card.current.as_ref().map(|p| p.mode) else {
+            return ActionReply::default(); // not on screen yet
+        };
+        let stretch = mode == "stretch";
         match name.as_str() {
-            "done" => {
+            "done" if stretch => {
                 let today = crate::store::today_key();
-                s.stats.add_done(&today);
-                s.sched.complete();
+                if !s.card.counted {
+                    s.card.counted = true;
+                    s.stats.add_done(&today);
+                    s.sched.complete();
+                    counted = true;
+                }
                 ActionReply {
                     today_count: Some(s.stats.today_count(&today)),
                 }
             }
-            "skip" | "stop" => {
+            "skip" | "stop" if stretch => {
                 s.sched.complete();
                 ActionReply::default()
             }
-            "snooze" => {
+            "snooze" if stretch => {
                 let ms = u64::from(s.settings.snooze_min) * gino.cfg.min;
                 s.sched.snooze(ms);
                 ActionReply::default()
             }
-            "trynow" => {
+            "trynow" if mode == "welcome" => {
                 s.show_after_close = true;
                 ActionReply::default()
             }
             _ => ActionReply::default(),
         }
     };
-    if reply.today_count.is_some() {
+    if counted {
         gino.save_stats();
     }
     tray::update(&app);
     reply
 }
 
-/// The card needs the window this tall (logical pixels, shadow room included).
+/// The card needs the window this tall (the page's CSS pixels, shadow room included).
 #[tauri::command]
-pub fn card_resize(app: AppHandle, height: f64) {
+pub fn card_resize(app: AppHandle, window: WebviewWindow, height: f64) {
     let height = if height.is_finite() && height > 0.0 {
         height
     } else {
         WIN_H
     };
-    if !app.state::<Gino>().lock().card_visible {
+    if !is_current(&app, &window) {
         return; // a window on its way out
     }
-    if let Some(win) = window(&app) {
-        place(&app, &win, height);
-    }
+    place(&app, &window, height);
 }
 
 /// The close animation finished.
 #[tauri::command]
-pub fn card_closed(app: AppHandle) {
-    put_away(&app);
+pub fn card_closed(app: AppHandle, window: WebviewWindow) {
+    if is_current(&app, &window) {
+        put_away(&app);
+    }
 }
 
 #[cfg(test)]
@@ -684,5 +757,52 @@ mod tests {
                 }
             );
         }
+    }
+
+    #[test]
+    fn the_window_grows_with_the_text_size_but_the_corner_gap_does_not() {
+        assert_eq!(window_size(214.0, 1.0), (WIN_W, 214.0));
+        // At 150% with text at 114%, a CSS pixel is 1.71 screen pixels: the window is 440 x 197
+        // CSS pixels, 8 logical pixels (12 physical) from the corner of the work area.
+        let screen = Screen {
+            bounds: Rect {
+                x: 0,
+                y: 0,
+                width: 3840,
+                height: 2160,
+            },
+            work_area: Rect {
+                x: 0,
+                y: 0,
+                width: 3840,
+                height: 2088,
+            },
+            scale: 1.5,
+            primary: true,
+        };
+        let (width, height) = window_size(197.0, 1.14);
+        let r = placement::card_bounds(&[screen], None, width, height, EDGE);
+        assert_eq!((r.width, r.height), (752, 337));
+        assert_eq!((r.x + r.width, r.y + r.height), (3828, 2076));
+    }
+
+    #[test]
+    fn each_card_gets_its_own_label() {
+        assert_eq!(label_for(1), "card-1");
+        assert_ne!(label_for(1), label_for(2));
+    }
+
+    #[test]
+    fn the_card_may_only_be_on_gino_s_own_page() {
+        let ok = |u: &str| is_own_page(&Url::parse(u).unwrap());
+        assert!(ok("http://tauri.localhost/index.html"));
+        assert!(ok("https://tauri.localhost/index.html"));
+        assert!(ok("tauri://localhost/index.html"));
+        assert!(!ok("https://example.com/"));
+        assert!(!ok("http://tauri.localhost.example.com/"));
+        assert!(!ok("http://ipc.localhost/card_ready"));
+        assert!(!ok("file:///C:/Windows/win.ini"));
+        assert!(!ok("about:blank"));
+        assert!(!ok("javascript:alert(1)"));
     }
 }

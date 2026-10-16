@@ -2,8 +2,6 @@
 // (%APPDATA%\Gino on Windows, ~/Library/Application Support/Gino on macOS), so nobody loses
 // their settings or counts when they update.
 
-#![allow(dead_code)]
-
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
@@ -232,7 +230,8 @@ mod tests {
 
     impl TempDir {
         fn new(name: &str) -> Self {
-            let dir = std::env::temp_dir().join(format!("gino-store-test-{}-{name}", std::process::id()));
+            let dir =
+                std::env::temp_dir().join(format!("gino-store-test-{}-{name}", std::process::id()));
             let _ = fs::remove_dir_all(&dir);
             TempDir(dir)
         }
@@ -267,7 +266,11 @@ mod tests {
     #[test]
     fn rotation_carries_on_from_saved_counters() {
         let flags = [false, false, true, false, false];
-        let mut stats = Stats { reminders: 5, cycle: 3, ..Stats::default() };
+        let mut stats = Stats {
+            reminders: 5,
+            cycle: 3,
+            ..Stats::default()
+        };
         assert_eq!(stats.pick_next(&flags), 2);
         assert_eq!(stats.pick_next(&flags), 4);
         assert_eq!(stats.pick_next(&flags), 0);
@@ -332,7 +335,11 @@ mod tests {
         assert_eq!(
             settings,
             Settings {
-                card_pos: Some(SavedCardPos { x: 300, bottom: 600, unit: None }),
+                card_pos: Some(SavedCardPos {
+                    x: 300,
+                    bottom: 600,
+                    unit: None
+                }),
                 welcomed: true,
                 ..Settings::default()
             }
@@ -346,11 +353,26 @@ mod tests {
     #[test]
     fn missing_fields_take_defaults_and_unknown_ones_are_skipped() {
         let dir = TempDir::new("partial");
-        dir.write(SETTINGS_FILE, r#"{"intervalMin":45,"cardPos":null,"someLaterSetting":[1,2]}"#);
+        dir.write(
+            SETTINGS_FILE,
+            r#"{"intervalMin":45,"cardPos":null,"someLaterSetting":[1,2]}"#,
+        );
         dir.write(STATS_FILE, r#"{"reminders":2}"#);
         let store = Store::new(dir.path().to_path_buf());
-        assert_eq!(store.load_settings(), Settings { interval_min: 45, ..Settings::default() });
-        assert_eq!(store.load_stats(), Stats { reminders: 2, ..Stats::default() });
+        assert_eq!(
+            store.load_settings(),
+            Settings {
+                interval_min: 45,
+                ..Settings::default()
+            }
+        );
+        assert_eq!(
+            store.load_stats(),
+            Stats {
+                reminders: 2,
+                ..Stats::default()
+            }
+        );
     }
 
     #[test]
@@ -360,23 +382,43 @@ mod tests {
             SETTINGS_FILE,
             r#"{"intervalMin":"twenty","snoozeMin":-5,"waitWhenBusy":false,"welcomed":true,"cardPos":{"x":40,"bottom":900,"unit":"physical"}}"#,
         );
-        dir.write(STATS_FILE, r#"{"days":{"2026-10-16":2},"reminders":"lots","cycle":7}"#);
+        dir.write(
+            STATS_FILE,
+            r#"{"days":{"2026-10-16":2},"reminders":"lots","cycle":7}"#,
+        );
         let store = Store::new(dir.path().to_path_buf());
         assert_eq!(
             store.load_settings(),
             Settings {
                 wait_when_busy: false,
                 welcomed: true,
-                card_pos: Some(SavedCardPos { x: 40, bottom: 900, unit: Some("physical".into()) }),
+                card_pos: Some(SavedCardPos {
+                    x: 40,
+                    bottom: 900,
+                    unit: Some("physical".into())
+                }),
                 ..Settings::default()
             }
         );
         let stats = store.load_stats();
-        assert_eq!((stats.today_count("2026-10-16"), stats.reminders, stats.cycle), (2, 0, 7));
+        assert_eq!(
+            (
+                stats.today_count("2026-10-16"),
+                stats.reminders,
+                stats.cycle
+            ),
+            (2, 0, 7)
+        );
 
         // A bad card position on its own just goes back to the corner.
         dir.write(SETTINGS_FILE, r#"{"welcomed":true,"cardPos":{"x":"left"}}"#);
-        assert_eq!(store.load_settings(), Settings { welcomed: true, ..Settings::default() });
+        assert_eq!(
+            store.load_settings(),
+            Settings {
+                welcomed: true,
+                ..Settings::default()
+            }
+        );
     }
 
     #[test]
@@ -399,7 +441,11 @@ mod tests {
             idle_reset_min: 3,
             auto_snooze_min: 2,
             wait_when_busy: false,
-            card_pos: Some(SavedCardPos { x: 12, bottom: 34, unit: Some("logical".into()) }),
+            card_pos: Some(SavedCardPos {
+                x: 12,
+                bottom: 34,
+                unit: Some("logical".into()),
+            }),
             welcomed: true,
         };
         let stats = Stats {
@@ -447,7 +493,11 @@ mod tests {
         let settings = Settings {
             interval_min: 30,
             wait_when_busy: false,
-            card_pos: Some(SavedCardPos { x: -2400, bottom: 1500, unit: Some("physical".into()) }),
+            card_pos: Some(SavedCardPos {
+                x: -2400,
+                bottom: 1500,
+                unit: Some("physical".into()),
+            }),
             welcomed: true,
             ..Settings::default()
         };
@@ -462,11 +512,20 @@ mod tests {
 
         // Same field names and layout as the Electron version, and no temp files left behind.
         let text = fs::read_to_string(store.dir.join(SETTINGS_FILE)).unwrap();
-        assert!(text.starts_with("{\n  \"intervalMin\": 30,\n  \"snoozeMin\": 10,"), "{text}");
+        assert!(
+            text.starts_with("{\n  \"intervalMin\": 30,\n  \"snoozeMin\": 10,"),
+            "{text}"
+        );
         assert!(text.contains("\n  \"cardPos\": {\n    \"x\": -2400,\n    \"bottom\": 1500,\n    \"unit\": \"physical\"\n  },"), "{text}");
         let stats_text = fs::read_to_string(store.dir.join(STATS_FILE)).unwrap();
-        assert_eq!(stats_text, "{\n  \"days\": {\n    \"2026-10-16\": 1\n  },\n  \"reminders\": 1,\n  \"cycle\": 1\n}");
-        let names: Vec<_> = fs::read_dir(&store.dir).unwrap().map(|e| e.unwrap().file_name()).collect();
+        assert_eq!(
+            stats_text,
+            "{\n  \"days\": {\n    \"2026-10-16\": 1\n  },\n  \"reminders\": 1,\n  \"cycle\": 1\n}"
+        );
+        let names: Vec<_> = fs::read_dir(&store.dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name())
+            .collect();
         assert_eq!(names.len(), 2, "{names:?}");
     }
 
@@ -474,8 +533,14 @@ mod tests {
     fn saving_over_an_existing_file_replaces_it() {
         let dir = TempDir::new("overwrite");
         let store = Store::new(dir.path().to_path_buf());
-        store.save_settings(&Settings { interval_min: 15, ..Settings::default() });
-        store.save_settings(&Settings { interval_min: 60, ..Settings::default() });
+        store.save_settings(&Settings {
+            interval_min: 15,
+            ..Settings::default()
+        });
+        store.save_settings(&Settings {
+            interval_min: 60,
+            ..Settings::default()
+        });
         assert_eq!(store.load_settings().interval_min, 60);
         let text = fs::read_to_string(dir.path().join(SETTINGS_FILE)).unwrap();
         assert!(text.contains("\"cardPos\": null"), "{text}");

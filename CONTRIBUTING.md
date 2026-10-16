@@ -29,8 +29,13 @@ before you spend time on it.
    ```
    npm run typecheck
    npm test
+   cargo fmt --check --manifest-path src-tauri/Cargo.toml
+   cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
    npm run screens    # for changes to the card or Gino: look at screens/index.html
    ```
+   `cargo fmt --manifest-path src-tauri/Cargo.toml` fixes the formatting for you. To run the same
+   checks on GitHub before you open a pull request, start the **Check** workflow on your branch from
+   your fork's **Actions** tab ("Run workflow").
 4. Open a pull request. The template has a short checklist, and the same checks run automatically.
 
 Keep each pull request to one change. Small pull requests get reviewed and merged much faster.

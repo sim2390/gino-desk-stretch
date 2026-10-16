@@ -11,10 +11,10 @@ use tauri::image::Image;
 use tauri::menu::{CheckMenuItem, IsMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::{TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, Wry};
-use tauri_plugin_autostart::ManagerExt;
 
 use crate::app::{self, Gino, Inner};
 use crate::card;
+use crate::platform;
 
 const TRAY_ID: &str = "gino";
 const INTERVALS: [u32; 5] = [15, 20, 30, 45, 60];
@@ -173,13 +173,10 @@ fn on_menu(app: &AppHandle, id: &str) {
     refresh(app);
 }
 
+/// Windows: Gino's own Run value. macOS: the autostart plugin. (See platform.)
 fn toggle_login(app: &AppHandle) {
-    let autostart = app.autolaunch();
-    let result = match autostart.is_enabled() {
-        Ok(true) => autostart.disable(),
-        _ => autostart.enable(),
-    };
-    if let Err(e) = result {
+    let on = platform::login_item_enabled(app);
+    if let Err(e) = platform::set_login_item(app, !on) {
         eprintln!("Could not change the login item: {e}");
     }
 }
@@ -216,7 +213,7 @@ fn refresh(app: &AppHandle) {
             has_pos: card::saved_pos(&s.settings).is_some(),
         }
     };
-    let login = app.autolaunch().is_enabled().unwrap_or(false);
+    let login = platform::login_item_enabled(app);
     let Some(tray_items) = app.try_state::<TrayItems>() else {
         return;
     };

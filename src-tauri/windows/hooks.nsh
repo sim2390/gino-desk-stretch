@@ -16,6 +16,10 @@
 !define GINO_ELECTRON_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\e864c687-50d9-551b-ad6e-9f978f25a4d6"
 ; Its own notes (install folder, shortcut name), which its uninstaller removes.
 !define GINO_ELECTRON_NOTES_KEY "Software\e864c687-50d9-551b-ad6e-9f978f25a4d6"
+; Where it always installed (a per-user install has no folder choice).
+!define GINO_ELECTRON_DIR "$LOCALAPPDATA\Programs\gino"
+; Gino's settings and stats, for both versions.
+!define GINO_DATA_DIR "$APPDATA\Gino"
 !define GINO_RUN_KEY "Software\Microsoft\Windows\CurrentVersion\Run"
 ; Task Manager's on/off switch (Startup apps) for each Run entry.
 !define GINO_STARTUP_APPROVED_KEY "Software\Microsoft\Windows\CurrentVersion\Explorer\StartupApproved\Run"
@@ -70,6 +74,18 @@ Var GinoRunWasOn         ; uninstaller: 1 = "Start with Windows" was on
     ${EndIf}
   ${EndIf}
 
+  ; Only ever run the uninstaller the Electron installer made, where it made
+  ; it. Anyone can write that registry value; anything else it names is not
+  ; ours to run. (Comparisons ignore case.)
+  ${If} $GinoOldDir != ""
+    ${GetFileName} $GinoOldUninstaller $R1
+    ${If} $GinoOldDir != "${GINO_ELECTRON_DIR}"
+    ${OrIf} $R1 != "Uninstall Gino.exe"
+      DetailPrint "Not removing the old Gino: its uninstall entry points somewhere unexpected ($GinoOldUninstaller)."
+      StrCpy $GinoOldDir ""
+    ${EndIf}
+  ${EndIf}
+
   ${If} $GinoOldDir != ""
     ${If} ${FileExists} $GinoOldUninstaller
       ; 1. Close the old Gino if it's running. The Restart Manager finds the
@@ -102,21 +118,18 @@ Var GinoRunWasOn         ; uninstaller: 1 = "Start with Windows" was on
       ${EndIf}
 
       ; 3. It's gone when both its Gino.exe and its uninstall entry are. Then
-      ;    clear what's left of its folder (it normally removes it itself):
-      ;    all of it only when it's the usual folder, otherwise only if empty.
-      ;    And shortcuts it left, if they still open the old Gino.exe.
+      ;    clear what's left of its folder (it normally removes it itself),
+      ;    shortcuts it left if they still open the old Gino.exe, and its
+      ;    browser engine's files next to Gino's data.
       ReadRegStr $R2 HKCU "${GINO_ELECTRON_KEY}" "UninstallString"
       ${If} $R2 == ""
       ${AndIfNot} ${FileExists} "$GinoOldDir\Gino.exe"
-        Delete "$GinoOldUninstaller"
-        ${If} $GinoOldDir == "$LOCALAPPDATA\Programs\gino"
-        ${AndIf} $GinoOldDir != $INSTDIR
+        ${If} $GinoOldDir != $INSTDIR
           RMDir /r "$GinoOldDir"
-        ${Else}
-          RMDir "$GinoOldDir"
         ${EndIf}
         !insertmacro GinoDeleteShortcutTo "$SMPROGRAMS\Gino.lnk" "$GinoOldDir\Gino.exe"
         !insertmacro GinoDeleteShortcutTo "$DESKTOP\Gino.lnk" "$GinoOldDir\Gino.exe"
+        !insertmacro GinoDeleteElectronLeftovers
       ${Else}
         DetailPrint "The old Gino was not removed (uninstaller result: $R0)."
         MessageBox MB_ICONINFORMATION|MB_OK "The old version of Gino could not be removed. You can uninstall it from Settings > Apps." /SD IDOK
@@ -130,6 +143,32 @@ Var GinoRunWasOn         ; uninstaller: 1 = "Start with Windows" was on
       !insertmacro GinoDeleteShortcutTo "$DESKTOP\Gino.lnk" "$GinoOldDir\Gino.exe"
     ${EndIf}
   ${EndIf}
+!macroend
+
+; The Electron Gino's Chromium kept its caches and state in %APPDATA%\Gino,
+; next to Gino's own settings.json and stats.json. The new Gino's web view keeps
+; its own elsewhere, so these exact names go; everything else, and the folder
+; itself, stays.
+!macro GinoDeleteElectronLeftovers
+  SetShellVarContext current
+  RMDir /r "${GINO_DATA_DIR}\blob_storage"
+  RMDir /r "${GINO_DATA_DIR}\Cache"
+  RMDir /r "${GINO_DATA_DIR}\Code Cache"
+  RMDir /r "${GINO_DATA_DIR}\DawnGraphiteCache"
+  RMDir /r "${GINO_DATA_DIR}\DawnWebGPUCache"
+  RMDir /r "${GINO_DATA_DIR}\GPUCache"
+  RMDir /r "${GINO_DATA_DIR}\GPUPersistentCache"
+  RMDir /r "${GINO_DATA_DIR}\GrShaderCache"
+  RMDir /r "${GINO_DATA_DIR}\Local Storage"
+  RMDir /r "${GINO_DATA_DIR}\Network"
+  RMDir /r "${GINO_DATA_DIR}\Session Storage"
+  RMDir /r "${GINO_DATA_DIR}\ShaderCache"
+  RMDir /r "${GINO_DATA_DIR}\Shared Dictionary"
+  Delete "${GINO_DATA_DIR}\declarative_performance_observer.db"
+  Delete "${GINO_DATA_DIR}\declarative_performance_observer.db-journal"
+  Delete "${GINO_DATA_DIR}\DIPS"
+  Delete "${GINO_DATA_DIR}\Local State"
+  Delete "${GINO_DATA_DIR}\Preferences"
 !macroend
 
 ; Deletes a shortcut only if it points at the given program.
@@ -219,7 +258,7 @@ Var GinoRunWasOn         ; uninstaller: 1 = "Start with Windows" was on
       ; removes only the com.gino.stretch folders; Gino's settings and stats
       ; are in %APPDATA%\Gino (the Electron version's folder, kept on purpose).
       SetShellVarContext current
-      RMDir /r "$APPDATA\Gino"
+      RMDir /r "${GINO_DATA_DIR}"
     ${EndIf}
   ${EndIf}
 !macroend

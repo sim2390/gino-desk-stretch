@@ -9,9 +9,8 @@
 //   showing a window doesn't activate an app that isn't already active. Clicking the card
 //   does activate the app, like the Electron version on macOS.
 
-#![allow(dead_code)]
-
-use tauri::{Runtime, WebviewWindow};
+use tauri::{AppHandle, Runtime, WebviewWindow};
+use tauri_plugin_autostart::ManagerExt;
 
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
@@ -49,4 +48,25 @@ pub fn show_without_focus<R: Runtime>(window: &WebviewWindow<R>) {
     let _ = window.show();
 }
 
+/// WKWebView draws the card at the screen's own scale, whatever the text size settings say.
+pub fn text_scale() -> f64 {
+    1.0
+}
+
 pub fn remove_legacy_login_item() {}
+
+// "Open at login" is the autostart plugin's LaunchAgent (registered in app.rs, on macOS only).
+
+pub fn login_item_enabled<R: Runtime>(app: &AppHandle<R>) -> bool {
+    app.autolaunch().is_enabled().unwrap_or(false)
+}
+
+pub fn set_login_item<R: Runtime>(app: &AppHandle<R>, enabled: bool) -> Result<(), String> {
+    let autostart = app.autolaunch();
+    let result = if enabled {
+        autostart.enable()
+    } else {
+        autostart.disable()
+    };
+    result.map_err(|e| e.to_string())
+}

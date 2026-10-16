@@ -176,15 +176,20 @@ Gino keeps two small files:
 They live in `%APPDATA%\Gino` on Windows and `~/Library/Application Support/Gino` on macOS. Delete
 them to start fresh: Gino says hello again next time. Gino never connects to the internet.
 
-On Windows, WebView2, which draws the card, also keeps a cache of its own in
-`%LOCALAPPDATA%\com.gino.stretch`.
+On Windows, WebView2, the engine that draws the card, keeps its own working files in
+`%LOCALAPPDATA%\com.gino.stretch\EBWebView` (about 10 MB): caches for drawing the card, a small
+history of the card page, WebView2's own settings and IDs, and a folder for crash reports. It's safe
+to delete while Gino is closed.
+
+Uninstalling Gino on Windows keeps your settings and counts, unless you tick **Delete the application
+data**.
 
 ## Troubleshooting
 
 **I can't find Gino.**
 On Windows 11, click the **^** arrow next to the clock. Drag Gino from there onto the taskbar. On a
-Mac, look in the menu bar at the top right. Or start Gino again: his welcome card pops up and says
-where he lives.
+Mac, look in the menu bar at the top right. Or start Gino again, from the Start menu on Windows or
+from Applications on a Mac: his welcome card pops up and says where he lives.
 
 **Windows says "Windows protected your PC".**
 Gino isn't code-signed yet. Click **More info**, then **Run anyway**.
@@ -212,8 +217,9 @@ His demonstrations always play. If the card itself doesn't slide in and Gino doe
 computer is set to reduce motion; that's on purpose.
 
 **Starting Gino again just shows his welcome card.**
-Only one Gino runs at a time. Starting him again shows the welcome card of the one that's already
-running, which says where to find him. If a card is already up, nothing changes.
+Only one Gino runs at a time. Starting him again, on Windows or on a Mac, shows the welcome card of
+the one that's already running, which says where to find him. If a card is already up, nothing
+changes.
 
 **I updated Gino and the card is back in its corner.**
 Gino forgets where you dragged the card once, when you update from 0.2. Drag it back and he

@@ -120,10 +120,15 @@ function setState(state: CardState) {
   $('note').hidden = !['done', 'snoozed', 'skipped'].includes(state);
 }
 
-// Tell the main process how tall the window needs to be (card + shadow room).
+// Tell the app how tall the window needs to be (card + shadow room), once per change: each
+// call moves the window.
+let sentHeight = 0;
 function fit() {
   requestAnimationFrame(() => {
-    if (api) api.resize(card.offsetHeight + 36);
+    const height = card.offsetHeight + 36;
+    if (!api || height === sentHeight) return;
+    sentHeight = height;
+    api.resize(height);
   });
 }
 
@@ -199,6 +204,9 @@ function show(p: ShowPayload) {
   card.classList.remove('out', 'in', 'idle');
   void card.offsetWidth; // restart the entrance animation
   card.classList.add('in');
+  // The app puts the window back to its default height as it shows a card, so send this
+  // card's height even if the page asked for the same one before the show.
+  sentHeight = 0;
   fit();
 
   // Show how it's done: Gino loops one rep at the timer's rhythm until Start.
@@ -438,15 +446,7 @@ document.addEventListener('click', (e) => {
   }
 });
 
-if (api) {
-  api.onShow(show);
-  // The main process put the card away (you walked off, or the screen locked).
-  api.onHide(() => {
-    clearTimers();
-    closing = true;
-    card.classList.remove('in');
-  });
-}
+if (api) api.onShow(show);
 
 // Hooks for dev/preview.html and dev/screens. Not used by the app.
 window.__card = {

@@ -4,8 +4,6 @@
 // The card starts in the bottom-right corner of the main screen. Drag it somewhere and it comes
 // back to that spot, as long as that screen is still connected.
 
-#![allow(dead_code)]
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Rect {
     pub x: i32,
@@ -64,7 +62,13 @@ fn overlap(a: &Rect, b: &Rect) -> i64 {
 
 /// The card window's rectangle in physical pixels. `width`, `height` and `edge` (the gap to
 /// the screen edge in the default corner) are logical pixels.
-pub fn card_bounds(screens: &[Screen], saved: Option<CardPos>, width: f64, height: f64, edge: f64) -> Rect {
+pub fn card_bounds(
+    screens: &[Screen],
+    saved: Option<CardPos>,
+    width: f64,
+    height: f64,
+    edge: f64,
+) -> Rect {
     if let Some(saved) = saved {
         // Match on the whole screen, taskbar included, so a card dropped over the taskbar
         // stays on that screen; then keep it inside the part the taskbar doesn't cover.
@@ -92,7 +96,11 @@ pub fn card_bounds(screens: &[Screen], saved: Option<CardPos>, width: f64, heigh
             // The bottom edge stays put, so a taller card grows upward, like in the corner.
             return Rect {
                 x: clamp(saved.x, area.x, area.x + area.width - w),
-                y: clamp(saved.bottom.saturating_sub(h), area.y, area.y + area.height - h),
+                y: clamp(
+                    saved.bottom.saturating_sub(h),
+                    area.y,
+                    area.y + area.height - h,
+                ),
                 width: w,
                 height: h,
             };
@@ -101,7 +109,12 @@ pub fn card_bounds(screens: &[Screen], saved: Option<CardPos>, width: f64, heigh
     }
     let Some(s) = screens.iter().find(|s| s.primary).or(screens.first()) else {
         // No screens reported at all (mid-reconfiguration): somewhere visible beats a panic.
-        return Rect { x: 0, y: 0, width: px(width, 1.0), height: px(height.max(MIN_HEIGHT), 1.0) };
+        return Rect {
+            x: 0,
+            y: 0,
+            width: px(width, 1.0),
+            height: px(height.max(MIN_HEIGHT), 1.0),
+        };
     };
     let area = s.work_area;
     let w = px(width, s.scale);
@@ -120,7 +133,12 @@ mod tests {
     use super::*;
 
     const fn rect(x: i32, y: i32, width: i32, height: i32) -> Rect {
-        Rect { x, y, width, height }
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
     }
 
     const fn pos(x: i32, bottom: i32) -> Option<CardPos> {
@@ -193,13 +211,22 @@ mod tests {
 
     #[test]
     fn uses_the_first_screen_when_none_is_flagged_primary() {
-        let unflagged = Screen { primary: false, ..MAIN };
-        assert_eq!(card_bounds(&[LEFT, unflagged], None, 440.0, 214.0, 8.0), rect(-448, 1170, 440, 214));
+        let unflagged = Screen {
+            primary: false,
+            ..MAIN
+        };
+        assert_eq!(
+            card_bounds(&[LEFT, unflagged], None, 440.0, 214.0, 8.0),
+            rect(-448, 1170, 440, 214)
+        );
     }
 
     #[test]
     fn no_screens_at_all_does_not_panic() {
-        assert_eq!(card_bounds(&[], pos(300, 600), 440.0, 214.0, 8.0), rect(0, 0, 440, 214));
+        assert_eq!(
+            card_bounds(&[], pos(300, 600), 440.0, 214.0, 8.0),
+            rect(0, 0, 440, 214)
+        );
     }
 
     // ---- mixed scaling: two 4K screens ----
@@ -234,21 +261,33 @@ mod tests {
 
     #[test]
     fn mixed_saved_spot_on_the_228_secondary() {
-        assert_eq!(place_4k(pos(-3000, 1500), 214.0), rect(-3000, 1012, 1003, 488));
+        assert_eq!(
+            place_4k(pos(-3000, 1500), 214.0),
+            rect(-3000, 1012, 1003, 488)
+        );
         // A taller card grows upward from the same bottom edge, at that screen's scale.
-        assert_eq!(place_4k(pos(-3000, 1500), 300.0), rect(-3000, 816, 1003, 684));
+        assert_eq!(
+            place_4k(pos(-3000, 1500), 300.0),
+            rect(-3000, 816, 1003, 684)
+        );
     }
 
     #[test]
     fn mixed_dropped_over_the_secondarys_taskbar() {
         // The bottom edge lands in the taskbar (2051..2160): the card stays on that screen, just above it.
-        assert_eq!(place_4k(pos(-2000, 2140), 214.0), rect(-2000, 1563, 1003, 488));
+        assert_eq!(
+            place_4k(pos(-2000, 2140), 214.0),
+            rect(-2000, 1563, 1003, 488)
+        );
     }
 
     #[test]
     fn mixed_straddling_the_seam_goes_to_the_screen_holding_most_of_it() {
         // Mostly on the secondary: pulled fully onto it, at its size.
-        assert_eq!(place_4k(pos(-600, 1500), 214.0), rect(-1003, 1012, 1003, 488));
+        assert_eq!(
+            place_4k(pos(-600, 1500), 214.0),
+            rect(-1003, 1012, 1003, 488)
+        );
         // Mostly on the primary: pulled fully onto that one, at its size.
         assert_eq!(place_4k(pos(-100, 1000), 214.0), rect(0, 634, 752, 366));
     }

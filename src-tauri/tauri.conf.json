@@ -6,14 +6,15 @@
   "build": {
     "frontendDist": "../build/web",
     "beforeDevCommand": { "script": "npm run build", "wait": true },
-    "beforeBuildCommand": "npm run build"
+    "beforeBuildCommand": "npm run build",
+    "removeUnusedCommands": true
   },
   "app": {
     "windows": [],
     "withGlobalTauri": false,
     "macOSPrivateApi": true,
     "security": {
-      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:"
+      "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'"
     }
   },
   "bundle": {
@@ -33,7 +34,7 @@
       "icons/icon.ico"
     ],
     "windows": {
-      "webviewInstallMode": { "type": "downloadBootstrapper", "silent": true },
+      "webviewInstallMode": { "type": "embedBootstrapper", "silent": true },
       "nsis": {
         "installMode": "currentUser",
         "languages": ["English"],

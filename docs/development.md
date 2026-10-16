@@ -39,6 +39,7 @@ or the stretches, stop it and start it again.
 | `GINO_FAST=1` or `--fast` | Reminder minutes become seconds (`npm run fast` passes `--fast`). The idle break, the auto-snooze and pauses stay in real minutes. |
 | `GINO_DATA_DIR=<folder>` | Keeps `settings.json` and `stats.json` in that folder instead of the real one. Such a run is a test, and leaves Gino 0.2's login item alone. |
 | `GINO_QUIT_AFTER=<seconds>` | Quits by itself after that many seconds, for test runs. |
+| `GINO_NO_BREAKS=1` | Tests only: ignores idle time, a locked screen and sleep, so cards can be driven on an unattended machine. |
 
 In PowerShell: `$env:GINO_DATA_DIR = "$env:TEMP\gino-test"; npm start`. In a Mac terminal:
 `GINO_DATA_DIR=/tmp/gino-test npm start`.
@@ -64,7 +65,7 @@ shown in the web view the system already has: WebView2 on Windows, WKWebView on 
 | File | What it does |
 | --- | --- |
 | [`src-tauri/src/app.rs`](../src-tauri/src/app.rs) | Start-up, the app's state, the timer thread, and what the tray menu's items do |
-| [`card.rs`](../src-tauri/src/card.rs) | The card window: making, placing, showing and hiding it, and the commands the card page calls |
+| [`card.rs`](../src-tauri/src/card.rs) | The card window: making one for each card, placing and showing it, destroying it afterwards, and the commands the card page calls |
 | [`tray.rs`](../src-tauri/src/tray.rs) | The tray icon (menu bar on macOS), its menu and its tooltip |
 | [`scheduler.rs`](../src-tauri/src/scheduler.rs) | Counts active screen time and decides when a stretch is due. Pure logic, no Tauri |
 | [`placement.rs`](../src-tauri/src/placement.rs) | Decides where the card window goes. Pure logic, no Tauri |
@@ -74,8 +75,8 @@ shown in the web view the system already has: WebView2 on Windows, WKWebView on 
 | [`main.rs`](../src-tauri/src/main.rs), [`lib.rs`](../src-tauri/src/lib.rs) | Start the app, and list the modules |
 | [`src-tauri/tauri.conf.json`](../src-tauri/tauri.conf.json) | Tauri's settings: the page's security policy and the installers |
 | [`src-tauri/capabilities/default.json`](../src-tauri/capabilities/default.json) | What the card page may call: Gino's commands, and dragging its window |
-| [`src-tauri/windows/hooks.nsh`](../src-tauri/windows/hooks.nsh) | Extra steps in the Windows installer, which replace the Electron version |
-| [`src/bridge.ts`](../src/bridge.ts) | The only bridge between the card page and Rust, and dragging the card |
+| [`src-tauri/windows/hooks.nsh`](../src-tauri/windows/hooks.nsh) | Gino's own steps in the Windows installer and uninstaller, including replacing the Electron version |
+| [`src/bridge.ts`](../src/bridge.ts) | The only bridge between the card page and Rust; dragging the card; no web view menu or shortcuts |
 | [`src/card.html`](../src/card.html), [`card.css`](../src/card.css), [`card.ts`](../src/card.ts) | The pop-up card: its states, the guided timer, and Gino's moves |
 | [`src/gino.ts`](../src/gino.ts) | Draws Gino as SVG, and moves him in time (`setMove`, `demo`) |
 | [`src/exercises.ts`](../src/exercises.ts) | The stretches |
@@ -119,7 +120,8 @@ which Tauri manages (`app.state::<Gino>()`). The lock is only held for quick rea
 across a call into Tauri: from another thread, Tauri's window calls wait for the main thread, which
 may itself be waiting for the lock. Code on other threads hands window and tray work to the main
 thread with `run_on_main_thread`, so `card::show_stretch()` and `tray::update()` can be called from
-anywhere.
+anywhere. Card windows are made the same way, from the event loop itself (see
+[Gotchas](#gotchas)).
 
 ### The timer
 
@@ -138,11 +140,20 @@ of the monotonic clock and the wall clock, so a Mac that slept still comes back 
 
 ### The card window
 
-`card::create()` makes the window once, hidden, at start-up; after that it is only shown and hidden.
-It's frameless, transparent, always on top, out of the taskbar, and has no system shadow (the card
-draws its own). Its label is `card` and its page `index.html`. Requests to close it are refused, so
-it can't go away for good.
+There is no card window while Gino waits. `card.rs` makes a new one for each card and destroys it
+when the card is put away, so the web view's processes only exist while a card is up: that's what
+keeps Gino's memory use small between stretches. Each window gets its own label (`card-<n>`), and
+commands from a window that isn't the current card's are ignored.
 
+The window is made hidden and loads `index.html`. Rust shows it only once the page calls
+`card_ready`, so it never flashes up empty; if the page never does, Rust gives up on that card after
+20 seconds. The window is frameless, transparent, always on top, out of the taskbar, and has no system
+shadow (the card draws its own). Requests to close it are refused: only Gino puts it away.
+
+- **No network.** On Windows, the card's WebView2 is started with `--disable-background-networking`
+  and `--no-proxy-server`, after wry's own `--disable-features` list (in `card.rs`). Keep them:
+  without them WebView2 contacts Microsoft (`config.edge.skype.com`) every time it starts, and the
+  README promises that Gino never connects to the internet.
 - **No focus on Windows.** `focusable(false)` makes Tauri keep `WS_EX_NOACTIVATE`, so clicking the
   card doesn't activate it. Tauri's `show()` activates it anyway, so `prepare_card_window()` in
   `platform/windows.rs` installs a `WH_CBT` hook on the card's thread that refuses to activate the
@@ -150,19 +161,24 @@ it can't go away for good.
   `SWP_NOACTIVATE`.
 - **On macOS**, Gino runs as an accessory app (no Dock icon: the activation policy, and `LSUIElement`
   in [`Info.plist`](../src-tauri/Info.plist)), and showing a window doesn't activate an app that
-  isn't active. Clicking the card does. The window is on every desktop, takes the first click, and
-  keeps running while hidden.
+  isn't active. Clicking the card does. The window is on every desktop, and takes the first click.
 
 ### Where the card goes
 
 `card::place()` lists the screens (bounds, work area, scale factor, and which is the main one) and
 passes them, with the saved position, to `placement::card_bounds()`.
 
-- **Physical pixels.** Positions are in physical pixels. The card's size is in logical (CSS) pixels,
-  scaled by the screen it lands on, so it looks the same size on every screen.
-- **Saved position:** `settings.cardPos`, stored as `{ x, bottom, unit: "physical" }`, so a taller
-  card grows upward. A position the Electron version saved (logical pixels, no `unit`) is ignored,
-  and the card starts in its corner.
+- **Units.** On Windows, placement works in physical pixels, and the card's size, in logical (CSS)
+  pixels, is scaled by the screen it lands on, so it looks the same size on every screen. On macOS it
+  works in logical points: tao has no single physical space across screens there.
+- **Text size.** On Windows, WebView2 also draws the page bigger by the **Text size** setting
+  (Settings › Accessibility), so the card window is made that much bigger too
+  (`platform::text_scale()`, read fresh for each placement). The card keeps its layout and follows
+  the setting, instead of wrapping and getting cut off.
+- **Saved position:** `settings.cardPos`, stored as `{ x, bottom, unit }`, so a taller card grows
+  upward. `unit` is `"physical"` on Windows and `"logical"` on macOS, and each system only uses
+  positions in its own unit. A position the Electron version saved (no `unit`) is ignored, and the
+  card starts in its corner.
 - **Default:** with no saved position, the card goes in the primary display's bottom-right corner,
   8 logical pixels from the edges.
 - **Saved position on a connected screen:** it is clamped into the work area of the display it
@@ -178,6 +194,10 @@ WebView2 ignores `-webkit-app-region`, so `bridge.ts` starts the drag itself: a 
 `core:window:allow-start-dragging` in the capabilities). Rust listens for the window's `Moved` event,
 which comes in bursts during a drag. `settle_moves()` waits until 300 ms pass without one, then saves
 the spot on the main thread, ignoring moves that land where `place()` itself put the window.
+
+`bridge.ts` also turns off the web view's right-click menu and its shortcut keys (F5 reloads, Ctrl+P
+prints, Alt+Left goes back), so right-clicking the card does nothing. Tab, Enter, Space and Esc still
+work.
 
 ### The card
 
@@ -215,14 +235,14 @@ nothing, and the card runs without `ginoApi`. The names are in `src/ipc.ts`.
 | Direction | Name | Meaning |
 | --- | --- | --- |
 | Rust → card | event `show` | A `ShowPayload`: `{ mode, exercise, todayCount, snoozeMin, intervalMin, autoSnoozeMin }`, where `mode` is `stretch` or `welcome` |
-| Rust → card | event `hide` | Put the card away now (you walked off, or the screen locked) |
-| card → Rust | command `card_ready` | The page is listening. Rust holds a card back until then, and sends it now |
+| card → Rust | command `card_ready` | The page is listening. Rust holds the card back until then, sends it now, and shows the window |
 | card → Rust | command `card_action` | `{ name, data }`, a `CardAction`: `start`, `done` (replies with `{ todayCount }`), `skip`, `stop`, `snooze`, `trynow`, `dismiss` |
 | card → Rust | command `card_resize` | `{ height }`: the window needs to be this tall, in CSS pixels with the shadow room |
-| card → Rust | command `card_closed` | The close animation finished, so Rust hides the window |
+| card → Rust | command `card_closed` | The close animation finished, so Rust destroys the window |
 
-Rust sends the events with `emit_to("card", …)`. The commands live in `card.rs` and are registered in
-`app.rs`.
+`show` is the only event, sent to the current card's window. There's no event to put a card away:
+when you walk off or lock the screen, Rust destroys the window. The commands live in `card.rs` and
+are registered in `app.rs`.
 
 ### Settings and stats
 
@@ -233,9 +253,10 @@ Electron version used, so updating keeps them:
 - the folder in `GINO_DATA_DIR`, when it's set.
 
 Their shapes are `Settings` and `Stats` in `store.rs` (and in `src/types.ts`). They're read once at
-startup: missing fields take the defaults from `Settings::default()`, and unknown ones are skipped.
-Each save writes a temporary file and renames it over the old one. Daily counts are trimmed to the
-last 90 days.
+startup, one field at a time: a field that's missing or the wrong shape takes its default from
+`Settings::default()` without the rest of the file, and unknown fields are skipped. Saves write a
+copy of the state, outside the lock, to a temporary file that is then renamed over the old one.
+Daily counts are trimmed to the last 90 days.
 
 ### macOS
 
@@ -244,21 +265,34 @@ last 90 days.
   still counts as a break through idle time.
 - **No bending outline.** Safari's engine doesn't morph CSS `d: path()`, so during chin tucks and
   thoracic extension Gino's outline keeps its shape on a Mac. The rest of each move plays.
+- **24-hour times.** Times in the menu, such as *Paused until 15:30*, are always on a 24-hour clock.
+
+### Starting at login
+
+On Windows, Gino writes **Start with Windows** himself, as a quoted
+`HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Gino` entry. It respects the switch in Task
+Manager's **Startup apps** (the `StartupApproved` value), and clears that value too when the option is
+turned off. On macOS, **Open at login** is a LaunchAgent, made by Tauri's autostart plugin.
 
 ### The Windows installer
 
 Tauri builds an NSIS installer (`bundle` in `tauri.conf.json`). It installs for the current user, so
-it needs no admin rights, and if WebView2 is missing it fetches Microsoft's installer and runs it
-silently. [`windows/hooks.nsh`](../src-tauri/windows/hooks.nsh) adds a step before any files are
-copied (`NSIS_HOOK_PREINSTALL`), for anyone coming from Gino 0.2 (Electron):
-1. If the Electron version's uninstall entry is there, it closes the old `Gino.exe` with the Restart
-   Manager, runs its uninstaller silently and waits, then removes what that leaves behind and any
-   shortcuts that still point at it. `%APPDATA%\Gino` is never touched.
-2. It moves **Start with Windows** over: it deletes the old `com.gino.stretch` Run value, if that
-   starts the old Gino, and writes a `Gino` value for the new one, the name the autostart plugin
-   uses.
+it needs no admin rights. It carries Microsoft's small, signed WebView2 bootstrapper
+(`embedBootstrapper`) instead of downloading it, so nothing is fetched over plain HTTP; on a PC
+without WebView2, the bootstrapper fetches the runtime itself.
+[`windows/hooks.nsh`](../src-tauri/windows/hooks.nsh) adds Gino's own steps:
+1. **Replacing Gino 0.2** (Electron), before any files are copied. The installer only ever runs the
+   old uninstaller from `%LOCALAPPDATA%\Programs\gino`, where the Electron installer put it. It
+   closes the old `Gino.exe` with the Restart Manager, runs a copy of the uninstaller silently and
+   waits. Once the old app is confirmed gone, it removes what's left of its folder, shortcuts that
+   still point at it, and the old Chromium's caches in `%APPDATA%\Gino` (folders such as `Cache`,
+   `GPUCache` and `GrShaderCache`). `settings.json` and `stats.json` are never touched.
+2. **Start with Windows.** It deletes the old `com.gino.stretch` Run value and its Task Manager
+   switch. If the old one was on, and not switched off in Task Manager, the installer turns on the new
+   Gino's at the end of the install. An upgrade of the new Gino keeps it as it was.
+3. **Uninstalling** with **Delete the application data** ticked also removes `%APPDATA%\Gino`.
 
-At start-up the app also deletes that old Run value (`platform::remove_legacy_login_item()`), unless
+At start-up the app also deletes the old Run value (`platform::remove_legacy_login_item()`), unless
 `GINO_DATA_DIR` is set.
 
 ## Testing
@@ -269,9 +303,20 @@ npm test
 ```
 
 `npm test` builds first, because the Rust side compiles in `build/exercises.json`, then runs
-`cargo test`. Both also run on GitHub, on Windows, for every pull request and every push to `main`
-([`.github/workflows/check.yml`](../.github/workflows/check.yml)). The workflow caches the compiled
-Rust dependencies, since the first build of Tauri takes several minutes.
+`cargo test`.
+
+The check workflow ([`.github/workflows/check.yml`](../.github/workflows/check.yml)) runs on Windows
+for every pull request and every push to `main`, and you can start it by hand on any branch from the
+**Actions** tab ("Run workflow"). Besides these two, it runs the Rust format and lint checks, so run
+them before you push:
+
+```
+cargo fmt --check --manifest-path src-tauri/Cargo.toml
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+```
+
+Clippy needs a build first, like `cargo test`. The workflow caches the compiled Rust dependencies,
+since the first build of Tauri takes several minutes.
 
 The tests are Rust unit tests, next to the code they test:
 - `scheduler.rs` covers active time, breaks, sleep, snooze, pause and interval changes;
@@ -391,6 +436,9 @@ bundle then lands in `src-tauri/target/universal-apple-darwin/release/bundle/`.
 - **Never call into Tauri while holding the lock.** A window or tray call from the timer thread waits
   for the main thread; if the main thread is waiting for the lock, both wait forever. Take what you
   need, let the lock go, then make the call.
+- **Make card windows from the event loop.** Queue the work with `run_on_main_thread` from another
+  thread, never inside a command, a menu click or a second launch's message: on Windows, making a web
+  view inside another one's callback can deadlock.
 - **Only one Gino runs at a time.** The lock is the app's identifier, `com.gino.stretch`, so
   `npm start` while an installed Gino 0.3 runs just shows that one's welcome card and exits. Quit it
   first. Gino 0.2 (Electron) uses another lock, so it runs alongside.
