@@ -1,9 +1,11 @@
 # Checks every pull request and every push to main: the types and the tests
-# (the TypeScript build, then the Rust unit tests).
+# (the TypeScript build, then the Rust unit tests). It can also be run on any
+# branch from the Actions tab ("Run workflow").
 # The installers are built separately, by build.yml.
 name: Check
 
 on:
+  workflow_dispatch:
   pull_request:
   push:
     branches: [main]
