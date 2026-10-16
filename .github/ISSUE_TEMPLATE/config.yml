@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Questions and ideas to talk through
+    url: https://github.com/sim2390/gino-desk-stretch/discussions
+    about: Ask a question, or talk an idea through before opening an issue.

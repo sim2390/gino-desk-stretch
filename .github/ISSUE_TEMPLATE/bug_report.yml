@@ -1,0 +1,44 @@
+name: Bug report
+description: Something in Gino doesn't work the way it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for reporting this. The more detail you give, the faster it gets fixed.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we see it too?
+      description: The steps that lead to it, if you know them.
+      placeholder: |
+        1. Click Gino's icon, then Stretch now
+        2. Press Start
+        3. ...
+  - type: dropdown
+    id: computer
+    attributes:
+      label: Computer
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+        - Something else
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Gino version
+      description: The number in the installer's name (for example 0.2.0), or "from source".
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: Drag images here if they help.

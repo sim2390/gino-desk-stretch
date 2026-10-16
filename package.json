@@ -4,6 +4,7 @@
   "version": "0.2.0",
   "description": "A desk stretch coach that lives in your tray. Gino the Gnocchi pops up every 20 minutes of screen time.",
   "main": "build/main.js",
+  "license": "MIT",
   "private": true,
   "scripts": {
     "build": "node scripts/build.mjs",

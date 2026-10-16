@@ -159,6 +159,9 @@ npm run typecheck
 npm test
 ```
 
+Both also run on GitHub for every pull request and every push to `main`
+([`.github/workflows/check.yml`](../.github/workflows/check.yml)).
+
 The tests are TypeScript, compiled by the build and run with plain Node and `assert`, with no
 framework:
 - `test/scheduler.test.ts` covers active time, breaks, snooze, pause and interval changes;

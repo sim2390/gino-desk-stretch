@@ -109,7 +109,20 @@ installers.
 - [Customizing Gino](docs/customizing.md): stretches, timings, poses and defaults
 - [Development](docs/development.md): how it works, testing, building and releasing
 - [Changelog](CHANGELOG.md)
+- [Contributing](CONTRIBUTING.md): ideas, bug reports and pull requests
+
+## Contributing
+
+Ideas, bug reports and pull requests are all welcome, and you don't need to write code to help.
+Suggest a stretch or a feature in [Discussions](https://github.com/sim2390/gino-desk-stretch/discussions)
+or with an [issue](https://github.com/sim2390/gino-desk-stretch/issues/new/choose). If you'd like to
+change the code, [CONTRIBUTING.md](CONTRIBUTING.md) explains how.
 
 ## Please note
 
 These are general desk stretches, not medical advice. Move gently, and skip anything that hurts.
+
+## License
+
+[MIT](LICENSE). The fonts Gino uses, Shantell Sans and Atkinson Hyperlegible, are under the SIL Open
+Font License.

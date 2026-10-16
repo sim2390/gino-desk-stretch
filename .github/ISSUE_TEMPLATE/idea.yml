@@ -1,0 +1,32 @@
+name: Idea
+description: Suggest a new stretch, a feature or an improvement
+labels: [enhancement]
+body:
+  - type: dropdown
+    id: kind
+    attributes:
+      label: What kind of idea?
+      options:
+        - A new stretch
+        - A feature
+        - An improvement to something Gino already does
+        - Something else
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: Your idea
+      description: What would you like Gino to do? For a stretch, describe how it's done and for how long.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: What would it help with? A moment from your day makes it easy to picture.
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Sketches, links, or an example from another app.
