@@ -5,23 +5,35 @@
 <title>Gino poses</title>
 <link rel="stylesheet" href="../src/card.css">
 <style>
+  html, body { height: auto; overflow: auto; }
   body { margin: 0; padding: 24px; background: #F4F7F1; font: 14px "Segoe UI", system-ui, sans-serif; color: #2E3327; }
   .grid { display: grid; grid-template-columns: repeat(5, 200px); gap: 16px; }
   figure { margin: 0; background: #fff; border: 1px solid #D5DECF; border-radius: 14px; padding: 12px; text-align: center; }
-  figure svg { width: 160px; height: 187px; }
-  body.static .gino * { animation: none !important; }
+  figure svg { width: 160px; height: 187px; overflow: visible; }
+  figcaption b { display: block; min-height: 1.4em; color: #4F6E46; }
+  body.static .gino * { animation: none !important; transition: none !important; }
 </style>
 </head>
 <body>
+<!-- ?static freezes everything. Rep poses loop one rep of their exercise, with its cues. -->
 <div class="grid" id="grid"></div>
+<script>var module = { exports: {} };</script>
+<script src="../src/exercises.js"></script>
+<script>const EXERCISES = module.exports;</script>
 <script src="../src/gino.js"></script>
 <script>
-  if (location.search.includes('static')) document.body.classList.add('static');
+  const still = location.search.includes('static');
+  if (still) document.body.classList.add('static');
   const grid = document.getElementById('grid');
   for (const p of Gino.poses) {
     const f = document.createElement('figure');
-    f.innerHTML = Gino.svg(p) + `<figcaption>${p}</figcaption>`;
+    f.innerHTML = Gino.svg(p) + `<figcaption>${p}<b></b></figcaption>`;
     grid.appendChild(f);
+    const ex = EXERCISES.find((e) => e.pose === p && Array.isArray(e.rep));
+    if (ex && !still) {
+      const cue = f.querySelector('b');
+      Gino.demo(f, ex.rep, { delay: 400, onPhase: (ph) => (cue.textContent = ph.cue) });
+    }
   }
 </script>
 </body>

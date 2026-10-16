@@ -6,6 +6,7 @@ const fs = require('fs');
 const { execFile } = require('child_process');
 const { app, BrowserWindow, Tray, Menu, screen, powerMonitor, ipcMain, nativeImage } = require('electron');
 const { Scheduler } = require('./src/scheduler');
+const { cardBounds } = require('./src/placement');
 const EXERCISES = require('./src/exercises');
 
 // `npm run fast` turns minutes into seconds so you can watch a full cycle quickly.
@@ -26,6 +27,7 @@ const DEFAULT_SETTINGS = {
   idleResetMin: 5, // idle this long counts as a break and restarts the timer
   autoSnoozeMin: 4, // an ignored card snoozes itself
   waitWhenBusy: true, // Windows: hold reminders during calls and full-screen apps
+  cardPos: null, // where you last dragged the card, { x, bottom }; null = corner of the main screen
   welcomed: false,
 };
 const DEFAULT_STATS = { days: {}, reminders: 0, cycle: 0 };
@@ -37,7 +39,8 @@ let tray = null;
 let cardWin = null;
 let cardReady = null;
 let cardVisible = false;
-let cardDisplay = null;
+let placedAt = null; // where we last put the card, to tell our own moves from your drags
+let moveTimer = null;
 let waiting = null; // reason a due stretch is being held back
 let checking = false;
 let lastCheck = 0;
@@ -165,7 +168,6 @@ function createCard() {
     frame: false,
     transparent: true,
     resizable: false,
-    movable: false,
     minimizable: false,
     maximizable: false,
     fullscreenable: false,
@@ -192,19 +194,43 @@ function createCard() {
     cardWin = null;
     cardVisible = false;
   });
+  // The card is dragged by its body (see card.css); remember where you drop it.
+  // macOS reports moves all through a drag (Windows once, at the end), so save once it settles.
+  cardWin.on('moved', () => {
+    clearTimeout(moveTimer);
+    moveTimer = setTimeout(rememberCardPos, 300);
+  });
+  // Windows offers Move/Close on right-clicking a drag area; the card doesn't need that menu.
+  cardWin.on('system-context-menu', (e) => e.preventDefault());
 }
 
 function placeCard(height) {
   if (!cardWin) return;
-  const display = cardDisplay || screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-  const wa = display.workArea;
-  const h = Math.max(120, Math.min(Math.round(height), wa.height));
-  cardWin.setBounds({
-    x: Math.round(wa.x + wa.width - WIN_W - EDGE),
-    y: Math.round(wa.y + wa.height - h - EDGE),
+  placedAt = cardBounds({
+    primary: screen.getPrimaryDisplay().workArea,
+    displays: screen.getAllDisplays(),
+    saved: settings.cardPos,
     width: WIN_W,
-    height: h,
+    height,
+    edge: EDGE,
   });
+  cardWin.setBounds(placedAt);
+}
+
+function rememberCardPos() {
+  if (!cardWin || cardWin.isDestroyed()) return;
+  const b = cardWin.getBounds();
+  // macOS reports our own setBounds as a move too; only a real drag lands somewhere new.
+  if (placedAt && Math.abs(b.x - placedAt.x) <= 2 && Math.abs(b.y - placedAt.y) <= 2) return;
+  settings.cardPos = { x: b.x, bottom: b.y + b.height };
+  placedAt = b;
+  saveSettings();
+}
+
+function resetCardPos() {
+  settings.cardPos = null;
+  saveSettings();
+  if (cardVisible && cardWin) placeCard(cardWin.getBounds().height);
 }
 
 async function showCard(exercise, mode = 'stretch') {
@@ -215,8 +241,6 @@ async function showCard(exercise, mode = 'stretch') {
     console.error(`Card failed to load: ${e.message}`);
     return;
   }
-  // Show it on the screen you're working on.
-  cardDisplay = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   placeCard(WIN_H);
   cardWin.webContents.send('show', {
     mode,
@@ -235,7 +259,6 @@ async function showCard(exercise, mode = 'stretch') {
 function hideCard() {
   if (cardWin && !cardWin.isDestroyed()) cardWin.hide();
   cardVisible = false;
-  cardDisplay = null;
   updateTray();
   if (showAfterClose) {
     showAfterClose = false;
@@ -428,7 +451,12 @@ function buildMenu() {
       },
     });
   }
-  items.push(loginMenuItem(), { type: 'separator' }, { label: 'Quit Gino', click: () => app.quit() });
+  items.push(
+    loginMenuItem(),
+    { label: 'Reset card position', enabled: !!settings.cardPos, click: resetCardPos },
+    { type: 'separator' },
+    { label: 'Quit Gino', click: () => app.quit() }
+  );
   return Menu.buildFromTemplate(items);
 }
 

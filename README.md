@@ -29,21 +29,28 @@ Click the tray icon for the menu:
 - **Hold off during calls and full-screen apps** (Windows): reminders wait while an app
   has your microphone open, or during presentations and full-screen apps
 - **Start with Windows** / **Open at login**
+- **Reset card position** puts the card back in its corner after you've dragged it
 
 On the card: **Start** runs a guided timer, **Snooze** asks again in 10 minutes,
 **Skip** waits a full interval. If you ignore a card, it snoozes itself after 4 minutes.
 If you step away for 5 minutes, that counts as a break and the timer starts over.
+
+The card pops up in the bottom-right corner of your main screen. Drag it by its body to
+anywhere you like, on any screen, and it comes back to that spot next time. If that screen
+is unplugged, it goes back to the corner.
 
 ## Make it yours
 
 - **Exercises:** `src/exercises.js`. Add, remove or reword; each one picks a pose.
 - **Gino himself:** `src/gino.js` draws him; `src/card.css` animates him.
   Open `dev/poses.html` in a browser to see every pose.
+- **See every screen:** `npm run screens` renders each state of the card and writes a report
+  to `screens/index.html`.
 - **Defaults** (interval, snooze, idle reset): top of `main.js`.
   Your saved settings and daily counts live in `settings.json` and `stats.json` in the app's data folder
   (`%APPDATA%\Gino` on Windows, `~/Library/Application Support/Gino` on macOS).
 
-Check the timer logic with `npm test`.
+Check the timer and placement logic with `npm test`.
 
 ## Using it on the Mac too
 
@@ -64,6 +71,7 @@ If macOS says the app is damaged, run `xattr -cr /Applications/Gino.app` once.
 | --- | --- |
 | `main.js` | Tray menu, timer, the pop-up window, the "is now a bad moment?" check |
 | `src/scheduler.js` | Counts active screen time and decides when a stretch is due |
+| `src/placement.js` | Decides where the card goes: main screen corner, or where you dragged it |
 | `src/card.html`, `card.css`, `card.js` | The pop-up card |
 | `src/gino.js` | Gino, drawn as SVG |
 | `src/exercises.js` | The stretches |

@@ -1,8 +1,16 @@
 /*
  * Gino the Gnocchi: an original mascot drawn as SVG.
  * Gino.svg(pose) returns an SVG string. Animations live in card.css and
- * key off the class names used here (.figure, .torso, .arm-l, .arm-r,
- * .leg-l, .leg-r, .eyes, .eye, .chin, .prop, .spark).
+ * key off the class names used here (.figure, .torso, .arms, .arm-l, .arm-r,
+ * .leg-l, .leg-r, .body, .shell, .upper, .eyes, .eye, .chin, .prop, .arrow,
+ * .roll, .spark).
+ *
+ * The rep poses (chinTuck, thoracic, shoulderRoll) move in time with the timer.
+ * Gino.setMove(el, move) puts data-move on the element that holds the SVG and
+ * card.css draws each move; Gino.demo(el, phases) loops one rep before Start.
+ * A pose with `bend` can bend his body: the top of him moves by the bend
+ * (transform in --bend-t) and the outline follows (path in --bent).
+ *
  * Works in the browser (window.Gino) and in Node (module.exports).
  */
 (function (root) {
@@ -37,12 +45,12 @@
     return `<path d="M${r1(x + ax * size)} ${r1(y + ay * size)} L${r1(x)} ${r1(y)} L${r1(x + bx * size)} ${r1(y + by * size)}" ${stroke(2.4, color)}/>`;
   }
 
-  function lineArrow(x0, y0, x1, y1, color = C.sage) {
+  function lineArrow(x0, y0, x1, y1, color = C.sage, cls = '') {
     const len = Math.hypot(x1 - x0, y1 - y0);
-    return `<g class="prop arrow"><path d="M${x0} ${y0} L${x1} ${y1}" ${stroke(2.4, color)}/>${head(x1, y1, (x1 - x0) / len, (y1 - y0) / len, 5, color)}</g>`;
+    return `<g class="prop arrow ${cls}"><path d="M${x0} ${y0} L${x1} ${y1}" ${stroke(2.4, color)}/>${head(x1, y1, (x1 - x0) / len, (y1 - y0) / len, 5, color)}</g>`;
   }
 
-  function arcArrow(cx, cy, r, a0, a1, color = C.sage) {
+  function arcArrow(cx, cy, r, a0, a1, color = C.sage, cls = '') {
     const p = (a) => [cx + r * Math.cos(rad(a)), cy + r * Math.sin(rad(a))];
     const [x0, y0] = p(a0);
     const [x1, y1] = p(a1);
@@ -51,7 +59,7 @@
     const dir = a1 > a0 ? 1 : -1;
     const tx = -Math.sin(rad(a1)) * dir;
     const ty = Math.cos(rad(a1)) * dir;
-    return `<g class="prop arrow"><path d="M${r1(x0)} ${r1(y0)} A${r} ${r} 0 ${large} ${sweep} ${r1(x1)} ${r1(y1)}" ${stroke(2.2, color)}/>${head(x1, y1, tx, ty, 4.5, color)}</g>`;
+    return `<g class="prop arrow ${cls}"><path d="M${r1(x0)} ${r1(y0)} A${r} ${r} 0 ${large} ${sweep} ${r1(x1)} ${r1(y1)}" ${stroke(2.2, color)}/>${head(x1, y1, tx, ty, 4.5, color)}</g>`;
   }
 
   function spark(x, y, s = 5) {
@@ -63,7 +71,7 @@
       handShape === 'flat'
         ? `<ellipse cx="${hand[0]}" cy="${hand[1]}" rx="7.5" ry="3.4" fill="${C.ink}" transform="rotate(-8 ${hand[0]} ${hand[1]})"/>`
         : `<circle cx="${hand[0]}" cy="${hand[1]}" r="4.2" fill="${C.ink}"/>`;
-    return `<g class="${cls}"><path d="${d}" ${stroke(5)}/>${handSvg}</g>`;
+    return `<g class="${cls} mv"><path d="${d}" ${stroke(5)}/>${handSvg}</g>`;
   }
 
   function leg(cls, d, shoe) {
@@ -88,25 +96,80 @@
       case 'look':
         return `${brows}<g class="eyes">${eye(eyeL + 2.5, 57)}${eye(eyeR + 2.5, 57)}</g><path d="M${55 + dx} 67 Q${60 + dx} 70 ${65 + dx} 67" ${stroke(2.4)}/>`;
       case 'tuck':
-        return `${brows}<g class="eyes">${eye(eyeL, 56)}${eye(eyeR, 56)}</g>${smile}<path class="chin" d="M${63 + dx} 76.5 Q${68 + dx} 79.5 ${73 + dx} 76.5" ${stroke(2)}/>`;
+        return `${brows}<g class="eyes">${eye(eyeL, 56)}${eye(eyeR, 56)}</g>${smile}<path class="chin mv" d="M${61 + dx} 77 Q${66 + dx} 80.5 ${71 + dx} 77" ${stroke(2)}/>`;
       default:
         return `${brows}<g class="eyes">${eye(eyeL, 56)}${eye(eyeR, 56)}</g>${smile}`;
     }
   }
 
+  // The body outline: a rounded rect (x 28-92, y 24-96, corners 25) drawn as
+  // cubic curves, with extra points down the sides so it can bend smoothly.
+  const K = 13.8; // 25 * 0.552: handle length for a quarter circle
+  const SHELL = [
+    [53, 24],
+    [57.7, 24], [62.3, 24], [67, 24],
+    [67 + K, 24], [92, 49 - K], [92, 49],
+    [92, 52.7], [92, 56.3], [92, 60],
+    [92, 63.7], [92, 67.3], [92, 71],
+    [92, 71 + K], [67 + K, 96], [67, 96],
+    [62.3, 96], [57.7, 96], [53, 96],
+    [53 - K, 96], [28, 71 + K], [28, 71],
+    [28, 67.3], [28, 63.7], [28, 60],
+    [28, 56.3], [28, 52.7], [28, 49],
+    [28, 49 - K], [53 - K, 24], [53, 24],
+  ];
+
+  function shellPath(pts) {
+    let d = `M${r1(pts[0][0])} ${r1(pts[0][1])}`;
+    for (let i = 1; i < pts.length; i += 3) {
+      d += ` C${pts.slice(i, i + 3).map(([x, y]) => `${r1(x)} ${r1(y)}`).join(' ')}`;
+    }
+    return `${d} Z`;
+  }
+
+  // Bend a point: above y `from` it moves fully (rotate `rot` degrees about
+  // cx,cy, then shift dx,dy), below y `to` it stays put, smooth in between.
+  function bendPoint([x, y], b) {
+    const t = Math.min(1, Math.max(0, (b.to - y) / (b.to - b.from)));
+    const w = t * t * (3 - 2 * t);
+    const a = rad((b.rot || 0) * w);
+    const px = x - b.cx;
+    const py = y - b.cy;
+    return [
+      b.cx + px * Math.cos(a) - py * Math.sin(a) + (b.dx || 0) * w,
+      b.cy + px * Math.sin(a) + py * Math.cos(a) + (b.dy || 0) * w,
+    ];
+  }
+
   function body(faceSvg) {
     // A plump pillow with fork ridges top and bottom, and a sage leaf garnish.
-    return `<g class="body">
-      <rect x="28" y="24" width="64" height="72" rx="25" fill="${C.body}" stroke="${C.ink}" stroke-width="2.6"/>
-      <path d="M41 31 Q60 27 79 31 M37 37 Q60 32.5 83 37" ${stroke(2.4, C.ridge)}/>
-      <path d="M36 81 Q60 86 84 81 M38 87 Q60 92 82 87 M43 92.5 Q60 96 77 92.5" ${stroke(2.4, C.ridge)}/>
-      <circle cx="35" cy="60" r="1.1" fill="#fff" opacity=".75"/><circle cx="85" cy="68" r="1.2" fill="#fff" opacity=".75"/><circle cx="83" cy="48" r=".9" fill="#fff" opacity=".75"/><circle cx="40" cy="74" r=".8" fill="#fff" opacity=".75"/>
-      <g class="leaf" transform="translate(68 25) rotate(14)">
-        <path d="M0 0 C-3.5 -9 2.5 -17.5 13 -19.5 C13.5 -10 8.5 -2.5 0 0 Z" fill="${C.leaf}" stroke="${C.ink}" stroke-width="2" stroke-linejoin="round"/>
-        <path d="M1.5 -2 Q5.5 -9.5 10.5 -15.5" ${stroke(1.4, C.vein)}/>
+    // .upper (top ridges, face, leaf) moves when a pose bends; .lower stays.
+    return `<g class="body mv">
+      <path class="shell mv" d="${shellPath(SHELL)}" fill="${C.body}" stroke="${C.ink}" stroke-width="2.6" stroke-linejoin="round"/>
+      <g class="lower">
+        <path d="M36 81 Q60 86 84 81 M38 87 Q60 92 82 87 M43 92.5 Q60 96 77 92.5" ${stroke(2.4, C.ridge)}/>
+        <circle cx="85" cy="68" r="1.2" fill="#fff" opacity=".75"/><circle cx="40" cy="74" r=".8" fill="#fff" opacity=".75"/>
       </g>
-      ${faceSvg}
+      <g class="upper bend mv">
+        <path d="M41 31 Q60 27 79 31 M37 37 Q60 32.5 83 37" ${stroke(2.4, C.ridge)}/>
+        <circle cx="35" cy="60" r="1.1" fill="#fff" opacity=".75"/><circle cx="83" cy="48" r=".9" fill="#fff" opacity=".75"/>
+        <g class="leaf" transform="translate(68 25) rotate(14)">
+          <path d="M0 0 C-3.5 -9 2.5 -17.5 13 -19.5 C13.5 -10 8.5 -2.5 0 0 Z" fill="${C.leaf}" stroke="${C.ink}" stroke-width="2" stroke-linejoin="round"/>
+          <path d="M1.5 -2 Q5.5 -9.5 10.5 -15.5" ${stroke(1.4, C.vein)}/>
+        </g>
+        ${faceSvg}
+      </g>
     </g>`;
+  }
+
+  // Shoulder rolls: a circling arrow by each shoulder, and a butter dot that
+  // travels round it in time with the rep (keyframes in card.css). The right
+  // one is the left one mirrored.
+  function rollers() {
+    const one =
+      arcArrow(18, 50, 9, 50, 320, C.sage, 'roll-arrow') +
+      `<g class="roll" style="transform-origin: 18px 50px"><circle cx="18" cy="59" r="3" fill="${C.butter}" stroke="${C.ink}" stroke-width="1.5"/></g>`;
+    return `<g class="rollers">${one}<g transform="matrix(-1 0 0 1 120 0)">${one}</g></g>`;
   }
 
   const LEGS = {
@@ -131,7 +194,8 @@
     },
   };
 
-  // Each pose: arms, legs, face, tilt (static torso rotation), chair, props, armFront.
+  // Each pose: arms, legs, face, faceShift, tilt (static torso rotation),
+  // chair (true, or 'side' for a side-on chair), props, armFront, bend.
   const POSES = {
     idle: { arms: ARMS.down, legs: 'stand', face: 'smile' },
     wave: {
@@ -139,12 +203,14 @@
       legs: 'stand',
       face: 'smile',
     },
+    // Three-quarter view, facing right. Moves: in (head glides straight back), out.
     chinTuck: {
       arms: ARMS.down,
       legs: 'stand',
       face: 'tuck',
       faceShift: 8,
-      props: () => lineArrow(113, 58, 100, 58),
+      bend: { dx: -7, cx: 60, cy: 60, from: 60, to: 92 },
+      props: () => lineArrow(114, 57, 101, 57, C.sage, 'mv'),
     },
     neckSide: {
       arms: { l: ['M31.5 62 C17 34 38 9 72 19', [74, 20]], r: ARMS.down.r },
@@ -152,6 +218,8 @@
       face: 'smile',
       tilt: -14,
     },
+    // Three-quarter view on a side-on chair whose back meets his mid-back.
+    // Moves: arch (upper body arches back over the backrest), up.
     thoracic: {
       arms: {
         l: ['M31.5 64 L15 45 L30 30', [30, 30]],
@@ -159,14 +227,16 @@
       },
       legs: 'stand',
       face: 'up',
-      chair: true,
-      props: () => arcArrow(60, 26, 16, 200, 340),
+      faceShift: 6,
+      chair: 'side',
+      bend: { rot: -17, cx: 29, cy: 64, from: 54, to: 88, arms: true },
     },
+    // Front view. Moves: up (shrug), back (squeeze), down.
     shoulderRoll: {
       arms: ARMS.down,
       legs: 'stand',
       face: 'smile',
-      props: () => arcArrow(22, 52, 9, 60, 330) + arcArrow(98, 52, 9, 120, -150),
+      props: rollers,
     },
     eyes: {
       arms: { l: ARMS.down.l, r: ['M88.5 64 L101 52 L81 45', [76, 44.5]] },
@@ -206,6 +276,23 @@
     },
   };
 
+  function chair(kind) {
+    if (kind === 'side') {
+      // seen side-on: a short backrest behind him, top at mid-back
+      return {
+        back: `<g class="chair"><rect x="15" y="62" width="14" height="40" rx="5" fill="${C.chairBack}" stroke="${C.ink}" stroke-width="2.2"/><path d="M22 104 L19 131 M93 104 L96 131" ${stroke(2.6)}/></g>`,
+        seat: `<rect class="seat" x="13" y="95" width="89" height="9" rx="4" fill="${C.chairSeat}" stroke="${C.ink}" stroke-width="2.2"/>`,
+      };
+    }
+    if (kind) {
+      return {
+        back: `<g class="chair"><rect x="24" y="36" width="72" height="62" rx="12" fill="${C.chairBack}" stroke="${C.ink}" stroke-width="2.2"/><path d="M29 104 L26 131 M91 104 L94 131" ${stroke(2.6)}/></g>`,
+        seat: `<rect class="seat" x="19" y="95" width="82" height="9" rx="4" fill="${C.chairSeat}" stroke="${C.ink}" stroke-width="2.2"/>`,
+      };
+    }
+    return { back: '', seat: '' };
+  }
+
   function svg(poseName = 'idle', opts = {}) {
     const p = POSES[poseName] || POSES.idle;
     const title = opts.title || 'Gino the Gnocchi';
@@ -216,22 +303,27 @@
     const cup = p.cup
       ? `<g class="cup"><rect x="99" y="75" width="10" height="12" rx="2" fill="${C.water}" stroke="${C.ink}" stroke-width="1.6"/><path d="M100.5 79 L107.5 79" ${stroke(1.2, '#8DB4C9')}/></g>`
       : '';
-    const behind = `${p.armFront === 'l' ? '' : armL}${p.armFront === 'r' ? '' : armR}`;
-    const front = `${p.armFront === 'l' ? armL : ''}${p.armFront === 'r' ? armR : ''}`;
+    const armsCls = `arms${p.bend && p.bend.arms ? ' bend mv' : ''}`;
+    const behind = `<g class="${armsCls}">${p.armFront === 'l' ? '' : armL}${p.armFront === 'r' ? '' : armR}</g>`;
+    const front = p.armFront
+      ? `<g class="${armsCls}">${p.armFront === 'l' ? armL : ''}${p.armFront === 'r' ? armR : ''}</g>`
+      : '';
 
     const legs = LEGS[p.legs].map(([cls, d, shoe]) => leg(cls, d, shoe)).join('');
     const tilt = p.tilt ? ` transform="rotate(${p.tilt} 60 92)"` : '';
+    const ch = chair(p.chair);
 
-    const chairBack = p.chair
-      ? `<g class="chair"><rect x="24" y="36" width="72" height="62" rx="12" fill="${C.chairBack}" stroke="${C.ink}" stroke-width="2.2"/><path d="M29 104 L26 131 M91 104 L94 131" ${stroke(2.6)}/></g>`
-      : '';
-    const chairSeat = p.chair
-      ? `<rect class="seat" x="19" y="95" width="82" height="9" rx="4" fill="${C.chairSeat}" stroke="${C.ink}" stroke-width="2.2"/>`
-      : '';
+    // a bending pose carries its bend as CSS variables for card.css
+    let vars = '';
+    if (p.bend) {
+      const b = p.bend;
+      const bent = shellPath(SHELL.map((pt) => bendPoint(pt, b)));
+      vars = ` style="--bend-o: ${b.cx}px ${b.cy}px; --bend-t: translate(${b.dx || 0}px, ${b.dy || 0}px) rotate(${b.rot || 0}deg); --bent: path('${bent}')"`;
+    }
 
-    return `<svg class="gino pose-${poseName}" viewBox="0 0 120 140" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${title}">
+    return `<svg class="gino pose-${poseName}" viewBox="0 0 120 140" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${title}"${vars}>
   <ellipse class="floor" cx="60" cy="130" rx="30" ry="4" fill="${C.ink}" opacity=".12"/>
-  ${chairBack}
+  ${ch.back}
   <g class="figure">
     <g class="legs">${legs}</g>
     <g class="torso"${tilt}>
@@ -241,12 +333,55 @@
       ${cup}
     </g>
   </g>
-  ${chairSeat}
+  ${ch.seat}
   ${p.props ? p.props() : ''}
 </svg>`;
   }
 
-  const api = { svg, poses: Object.keys(POSES), colors: C };
+  // ---------- moving in time (browser only) ----------
+
+  // Put the Gino inside `el` into `move`, taking `seconds` to get there.
+  // card.css draws each move from el's data-move and the timing variables.
+  // `into`: seconds already spent in this move, to join it part-way through.
+  // `from`: snap to this move first without animating, so a jump (a seek in the
+  // timer) lands mid-move instead of easing in from wherever Gino was.
+  function setMove(el, move, { seconds = 1, into = 0, from = null } = {}) {
+    if (from && from !== move) {
+      el.classList.add('snap');
+      el.dataset.move = from;
+      void el.offsetWidth; // commit the start pose
+      el.classList.remove('snap');
+    }
+    el.style.setProperty('--move-dur', `${Math.max(0, seconds)}s`);
+    el.style.setProperty('--move-delay', `${-Math.max(0, into)}s`);
+    el.dataset.move = move;
+  }
+
+  // Loop one rep on `el`: phases are [{ move, seconds }], as in exercises.js.
+  // 'hold' (or no move) keeps the last move. onPhase(phase, i) is told each
+  // phase as it starts. Returns a stop function. It runs with reduced motion
+  // too: the demo is the instructions (see the note at the end of card.css).
+  function demo(el, phases, { delay = 0, onPhase = null } = {}) {
+    let id = 0;
+    let i = 0;
+    let current = null;
+    if (!phases || !phases.length) return () => {};
+    const step = () => {
+      const ph = phases[i % phases.length];
+      const sec = Math.max(0.2, Number(ph.seconds) || 1);
+      if (ph.move && ph.move !== 'hold' && ph.move !== current) {
+        setMove(el, ph.move, { seconds: sec });
+        current = ph.move;
+      }
+      if (onPhase) onPhase(ph, i % phases.length);
+      i += 1;
+      id = setTimeout(step, sec * 1000);
+    };
+    id = setTimeout(step, delay);
+    return () => clearTimeout(id);
+  }
+
+  const api = { svg, poses: Object.keys(POSES), colors: C, setMove, demo };
   root.Gino = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
 })(typeof window !== 'undefined' ? window : globalThis);
