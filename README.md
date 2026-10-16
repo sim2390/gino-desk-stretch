@@ -1,80 +1,112 @@
-# Gino
+# Gino Desk Stretch
 
-A desk stretch coach that lives in your tray (Windows) or menu bar (macOS).
-After 20 minutes of screen time, Gino the Gnocchi pops up in the corner with a short stretch.
-He demonstrates it, runs a timer, and counts what you've done today.
+A desk stretch coach for Windows and macOS. After 20 minutes at your computer, **Gino the Gnocchi**
+pops up in the corner of your screen with a short stretch, shows you how it's done, and counts you
+through it.
 
-## Run it
+<p>
+  <img src="docs/images/reminder.png" width="440" alt="A reminder card: Gino on his plate, 'Chin tucks', with Start, Snooze 10 min and Skip buttons">
+  <img src="docs/images/rep-hold.png" width="440" alt="The guided timer during chin tucks: 'Hold', a countdown ring, and 'Rep 2 of 10'">
+</p>
 
-You need [Node.js](https://nodejs.org) (the LTS version). Then, in this folder:
+## What it does
+
+- **Counts real screen time.** Only the minutes you're actually using the computer count. Step away
+  for 5 minutes, lock the screen or let the computer sleep, and that's a break: the count starts over.
+- **Pops up a small card**, bottom right on your main screen. Drag it anywhere you like and it comes
+  back to that spot next time.
+- **Seven stretches in rotation:** sit up straight, chin tucks, neck side stretch, eye break, thoracic
+  extension and shoulder rolls, plus a two-minute walkaround every third time.
+- **Guided reps.** For chin tucks, thoracic extension and shoulder rolls, the card calls out every part
+  of every rep ("Tuck back", "Hold", "Relax") with a countdown, and Gino does the move with you.
+- **Stays out of your way.** On Windows it waits while you're on a call, in a full-screen app or
+  presenting. The card pops up without taking your keyboard focus, and if you ignore it, it snoozes
+  itself.
+- **Counts what you've done today.**
+- **Keeps to itself.** Gino never connects to the internet. Your settings and counts stay on your
+  computer.
+
+## Download and install
+
+Gino isn't code-signed yet, so your computer warns you the first time you open it.
+
+### Windows 10 and 11
+
+1. Download **Gino Setup 0.2.0.exe** from the
+   [Releases page](https://github.com/sim2390/gino-desk-stretch/releases).
+2. Run it. If Windows says it protected your PC, click **More info**, then **Run anyway**.
+3. Gino lives in the tray by the clock. Windows 11 hides new tray icons under the **^** arrow: drag
+   him out onto the taskbar so you can always see him.
+4. Click Gino and tick **Start with Windows**.
+
+Rather not install anything? Download **Gino 0.2.0.exe** instead. It runs as it is.
+
+### macOS (Apple silicon: M1 and later)
+
+1. Download the `.dmg` from the [Releases page](https://github.com/sim2390/gino-desk-stretch/releases)
+   and drag Gino into Applications.
+2. The first time, right-click Gino in Applications and choose **Open**. If macOS says the app is
+   damaged, run `xattr -cr /Applications/Gino.app` in Terminal once, then open it again.
+3. Gino lives in the menu bar. Click him and tick **Open at login**.
+
+## Using Gino
+
+When a stretch is due, the card offers three choices:
+
+| Button | What happens |
+| --- | --- |
+| **Start** | Runs the guided timer: a short "Get ready", then the stretch. The yellow bar fills as you go. |
+| **Snooze 10 min** | Asks again in 10 minutes. |
+| **Skip** | No stretch this time; the next one comes after a full interval. |
+
+**How to** opens the steps. While the timer runs, **Done** finishes early and counts it, and **Stop**
+ends it without counting.
+
+Click Gino's icon for the menu: stretch now, pause (30 minutes, 1 hour, 2 hours or until tomorrow
+morning), how often to remind you (every 15 to 60 minutes), holding off during calls, starting at
+login, and putting the card back in its corner.
+
+The [user guide](docs/user-guide.md) covers every screen, each stretch and its timings, and what to do
+when something doesn't look right.
+
+## Your data
+
+- Gino keeps two small files on your computer: `settings.json` and `stats.json`. They're in
+  `%APPDATA%\Gino` on Windows and `~/Library/Application Support/Gino` on macOS. Daily counts are kept
+  for about three months.
+- No accounts, no analytics, no network access.
+- On Windows, **Hold off during calls and full-screen apps** asks Windows whether an app currently has
+  the microphone open, and whether Windows itself is holding back notifications (full-screen app,
+  presentation, locked screen). Gino never listens to or records anything.
+
+## Make it yours
+
+The stretches are a plain list in [`src/exercises.js`](src/exercises.js): add, remove or reword them,
+change the timings, or split a stretch into guided reps. [Customizing Gino](docs/customizing.md)
+explains every field and shows how to preview your changes.
+
+## Run it from the source
+
+You need [Node.js](https://nodejs.org) 22.12 or newer.
 
 ```
+git clone https://github.com/sim2390/gino-desk-stretch.git
+cd gino-desk-stretch
 npm install
 npm start
 ```
 
-The first `npm install` downloads Electron (about 100 MB), so give it a minute.
-Gino says hello on first start and then lives in the tray. On Windows 11 new tray icons
-hide under the **^** arrow by the clock: drag him out so he's always visible.
+The first start downloads Electron (about 100 MB). `npm run fast` turns minutes into seconds so you
+can watch a whole cycle quickly, and `npm test` checks the timer and placement logic.
+[Development](docs/development.md) explains how the app fits together and how to build the installers.
 
-To watch a full cycle quickly, use `npm run fast`: reminder minutes become seconds.
+## Documentation
 
-## Using it
+- [User guide](docs/user-guide.md): every screen, the stretches, the tray menu, troubleshooting
+- [Customizing Gino](docs/customizing.md): stretches, timings, poses and defaults
+- [Development](docs/development.md): how it works, testing, building and releasing
+- [Changelog](CHANGELOG.md)
 
-Click the tray icon for the menu:
+## Please note
 
-- **Stretch now** if you want one immediately
-- **Pause** for 30 minutes, 1 hour, 2 hours or until tomorrow morning
-- **Remind me every** 15 to 60 minutes
-- **Hold off during calls and full-screen apps** (Windows): reminders wait while an app
-  has your microphone open, or during presentations and full-screen apps
-- **Start with Windows** / **Open at login**
-- **Reset card position** puts the card back in its corner after you've dragged it
-
-On the card: **Start** runs a guided timer, **Snooze** asks again in 10 minutes,
-**Skip** waits a full interval. If you ignore a card, it snoozes itself after 4 minutes.
-If you step away for 5 minutes, that counts as a break and the timer starts over.
-
-The card pops up in the bottom-right corner of your main screen. Drag it by its body to
-anywhere you like, on any screen, and it comes back to that spot next time. If that screen
-is unplugged, it goes back to the corner.
-
-## Make it yours
-
-- **Exercises:** `src/exercises.js`. Add, remove or reword; each one picks a pose.
-- **Gino himself:** `src/gino.js` draws him; `src/card.css` animates him.
-  Open `dev/poses.html` in a browser to see every pose.
-- **See every screen:** `npm run screens` renders each state of the card and writes a report
-  to `screens/index.html`.
-- **Defaults** (interval, snooze, idle reset): top of `main.js`.
-  Your saved settings and daily counts live in `settings.json` and `stats.json` in the app's data folder
-  (`%APPDATA%\Gino` on Windows, `~/Library/Application Support/Gino` on macOS).
-
-Check the timer and placement logic with `npm test`.
-
-## Using it on the Mac too
-
-Put this folder in a GitHub repo, then either:
-
-- **Run from source:** clone it on the Mac, `npm install`, `npm start`. Same as Windows.
-  "Open at login" only works for the built app, so use this for trying things out.
-- **Build installers on GitHub:** the workflow in `.github/workflows/build.yml` builds a Windows
-  installer and a Mac `.dmg`. Run it from the repo's **Actions** tab, then download the files from the run.
-
-The builds aren't code-signed. Windows SmartScreen will say "unknown publisher": choose
-**More info → Run anyway**. On the Mac, right-click the app and choose **Open** the first time.
-If macOS says the app is damaged, run `xattr -cr /Applications/Gino.app` once.
-
-## How it's put together
-
-| File | What it does |
-| --- | --- |
-| `main.js` | Tray menu, timer, the pop-up window, the "is now a bad moment?" check |
-| `src/scheduler.js` | Counts active screen time and decides when a stretch is due |
-| `src/placement.js` | Decides where the card goes: main screen corner, or where you dragged it |
-| `src/card.html`, `card.css`, `card.js` | The pop-up card |
-| `src/gino.js` | Gino, drawn as SVG |
-| `src/exercises.js` | The stretches |
-| `preload.js` | The bridge between the card and the main process |
-
-These are general desk stretches, not medical advice. Skip anything that hurts.
+These are general desk stretches, not medical advice. Move gently, and skip anything that hurts.
