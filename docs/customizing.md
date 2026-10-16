@@ -11,9 +11,12 @@ you build. You'll need the source code: see [Run it from the source](../README.m
 
 ## Change the stretches
 
-The stretches are a list in [`src/exercises.js`](../src/exercises.js). Gino goes through them in
+The stretches are a list in [`src/exercises.ts`](../src/exercises.ts). Gino goes through them in
 order, and the one marked `walk: true` takes every third turn. Add, remove, reorder or reword them
 freely.
+
+The list is typed (the `Exercise` shape in [`src/types.ts`](../src/types.ts)), so a misspelled field,
+pose or move is an error: your editor underlines it, and `npm run typecheck` reports it.
 
 A simple timed stretch:
 
@@ -99,20 +102,21 @@ The timer length is worked out from the parts: chin tucks are 10 × 5.5 s = 55 s
 
 Poses without moves loop their own demonstration. To add a pose or a move:
 
-1. Draw the pose in `POSES` in [`src/gino.js`](../src/gino.js). Each pose is built from arms, legs, a
+1. Add its name to `PoseName` (and any new move to `Move`) in [`src/types.ts`](../src/types.ts).
+2. Draw the pose in `POSES` in [`src/gino.ts`](../src/gino.ts). Each pose is built from arms, legs, a
    face and optional props on a 120 × 140 grid.
-2. Add its moves in the "Rep poses move in time with the timer" section of
+3. Add its moves in the "Rep poses move in time with the timer" section of
    [`src/card.css`](../src/card.css). Each move is a rule like
    `[data-move="in"] .pose-chinTuck .bend { transform: ...; }`. Gino transitions to it over the
    part's `seconds`.
-3. Parts that should animate need the `mv` class in `gino.js`.
+4. Parts that should animate need the `mv` class in `gino.ts`.
 
 ## Change the defaults
 
-The defaults are at the top of [`main.js`](../main.js):
+The defaults are at the top of [`main.ts`](../main.ts):
 
-```js
-const DEFAULT_SETTINGS = {
+```ts
+const DEFAULT_SETTINGS: Settings = {
   intervalMin: 20,     // active screen time between stretches
   snoozeMin: 10,
   idleResetMin: 5,     // idle this long counts as a break and restarts the timer
@@ -135,8 +139,9 @@ macOS).
 - **`npm run screens`** renders every state of every stretch and writes a report to
   `screens/index.html`, including live cards you can start. Run it after any change to the stretches
   or the card.
-- **`dev/poses.html`**: open it in a browser to see all of Gino's poses, with the guided-rep poses
-  looping one rep.
+- **`dev/poses.html`**: run `npm run build`, then open it in a browser to see all of Gino's poses,
+  with the guided-rep poses looping one rep.
+- **`npm run typecheck`** catches misspelled fields, poses and moves.
 - **`npm test`** checks the timer and placement logic.
 
 When you're happy, build new installers: see [Development](development.md#building-the-installers).

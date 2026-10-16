@@ -1,50 +1,58 @@
-'use strict';
 // Renders every screen of the Gino card into screens/:
 //   NN-*.png      a still of every card state, 2x
 //   live.html     the real card running in a frame, made from src/card.html, with
-//                 copies of card.css, gino.js, card.js and exercises.js next to it
+//                 copies of card.css, card.js and exercises.js next to it
 //   index.html    the report, a full page for opening locally
 //   page.html     the same report as a page fragment (no <html>/<head>/<body>), for publishing
 //   files.json    every file page.html needs next to it
 //
 //   npm run screens
 //
-// This is an Electron main script. For the stills it loads the real src/card.html in a
-// hidden window with no preload, so card.js runs without window.ginoApi, and drives it
-// through the window.__card hooks. It never starts the app itself and keeps its own data
-// folder, so a running Gino and its settings are left alone.
+// This is an Electron main script, built to build/dev/screens.js. For the stills it loads the
+// real src/card.html in a hidden window with no preload, so card.js runs without window.ginoApi,
+// and drives it through the window.__card hooks. It never starts the app itself and keeps its
+// own data folder, so a running Gino and its settings are left alone.
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { app, BrowserWindow } = require('electron');
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { app, BrowserWindow, type NativeImage } from 'electron';
+import { EXERCISES } from '../src/exercises';
+import type { CardContent, CardMode, Exercise, RepPhase, Settings, ShowPayload } from '../src/types';
 
-const ROOT = path.join(__dirname, '..');
+const ROOT = path.join(__dirname, '..', '..'); // this runs from build/dev
 const OUT = path.join(ROOT, 'screens');
 const SRC = path.join(ROOT, 'src');
+const BUILD = path.join(ROOT, 'build');
 const CARD_HTML = path.join(SRC, 'card.html');
 
 const ZOOM = 2; // the PNGs are 2x the card's CSS size
-const VIEW_W = 440; // WIN_W in main.js: the real card window is this wide
+const VIEW_W = 440; // WIN_W in main.ts: the real card window is this wide
 let viewH = 640; // CSS px. Far taller than any card; grows if a card ever gets clipped.
 
 const TITLE = 'Gino Card Screens';
 const GOOGLE_FONTS =
   'https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Shantell+Sans:wght@300..800&display=swap';
-// The card's own files, copied next to live.html.
-const LIVE_FILES = ['card.css', 'gino.js', 'card.js', 'exercises.js'];
+// The card's own files, copied next to live.html, and where each comes from. card.js is the
+// build's bundle of the card and Gino; exercises.js puts the stretches on window.GinoExercises.
+const LIVE_FILES: Record<string, string> = {
+  'card.css': path.join(SRC, 'card.css'),
+  'card.js': path.join(BUILD, 'card.js'),
+  'exercises.js': path.join(BUILD, 'exercises.js'),
+};
 
-const EXERCISES = require(path.join(SRC, 'exercises.js'));
+// ---------- facts read from main.ts, so the report follows the app ----------
 
-// ---------- facts read from main.js, so the report follows the app ----------
+const MAIN_SRC = fs.readFileSync(path.join(ROOT, 'main.ts'), 'utf8');
+// The body of `const NAME = { ... };`, also with a type after NAME or `as const` after the }.
+const objectBody = (name: string) =>
+  (MAIN_SRC.match(new RegExp(`const ${name}(?::[^=]*)? = \\{([\\s\\S]*?)\\n\\}[^;\\n]*;`)) || [])[1] || '';
 
-const MAIN_SRC = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
-const objectBody = (name) => (MAIN_SRC.match(new RegExp(`const ${name} = \\{([\\s\\S]*?)\\n\\};`)) || [])[1] || '';
-
-const S = { intervalMin: 20, snoozeMin: 10, idleResetMin: 5, autoSnoozeMin: 4 };
+type NumberSettings = Pick<Settings, 'intervalMin' | 'snoozeMin' | 'idleResetMin' | 'autoSnoozeMin'>;
+const S: NumberSettings & Record<string, number> = { intervalMin: 20, snoozeMin: 10, idleResetMin: 5, autoSnoozeMin: 4 };
 for (const [, k, v] of objectBody('DEFAULT_SETTINGS').matchAll(/^\s*(\w+):\s*(\d+)/gm)) S[k] = Number(v);
 
-const BUSY = new Map(); // reason -> Windows notification states (BUSY_STATES)
+const BUSY = new Map<string, number[]>(); // reason -> Windows notification states (BUSY_STATES)
 for (const [, n, reason] of objectBody('BUSY_STATES').matchAll(/(\d+):\s*'([^']*)'/g)) {
   BUSY.set(reason, [...(BUSY.get(reason) || []), Number(n)]);
 }
@@ -55,9 +63,9 @@ const INTERVALS = ((MAIN_SRC.match(/label: 'Remind me every',\s*submenu: \[([\d,
 const TOMORROW_AT = Number((MAIN_SRC.match(/setHours\((\d+),/) || [])[1] || 6);
 const HAS_RESET_ITEM = MAIN_SRC.includes('Reset card position');
 
-// The welcome card is built by welcomeCard() in main.js from the running app's settings,
+// The welcome card is built by welcomeCard() in main.ts from the running app's settings,
 // so it is copied here: the Windows wording, with the default interval.
-const WELCOME = {
+const WELCOME: CardContent = {
   id: 'welcome',
   name: "Hi, I'm Gino",
   pose: 'wave',
@@ -66,17 +74,20 @@ const WELCOME = {
   howTo: [],
 };
 
-// What main.js sends with every card. autoSnoozeMin 0 so no card snoozes itself mid-capture.
+// What main.ts sends with every card. autoSnoozeMin 0 so no card snoozes itself mid-capture.
 const BASE = { todayCount: 2, snoozeMin: S.snoozeMin, intervalMin: S.intervalMin, autoSnoozeMin: 0 };
+// A scene's card. The stretches leave mode out: the card shows anything but 'welcome' as a stretch.
+type Payload = Omit<ShowPayload, 'mode'> & { mode?: CardMode };
 
-const repPhases = (ex) => (Array.isArray(ex.rep) ? ex.rep.filter((p) => p && Number(p.seconds) > 0) : []);
-// The timer's length without "Get ready", worked out as buildPlan() in card.js does.
-function workSeconds(ex) {
+const repPhases = (ex: CardContent): RepPhase[] =>
+  Array.isArray(ex.rep) ? ex.rep.filter((p) => p && Number(p.seconds) > 0) : [];
+// The timer's length without "Get ready", worked out as buildPlan() in card.ts does.
+function workSeconds(ex: CardContent): number {
   const phases = repPhases(ex);
   if (phases.length) return Math.max(1, Math.round(ex.reps || 1)) * phases.reduce((a, p) => a + Number(p.seconds), 0);
   return Math.max(5, ex.seconds || (ex.sides ? 40 : 30));
 }
-// main.js shows the stretches in turn, starting with the first that isn't the walkaround.
+// main.ts shows the stretches in turn, starting with the first that isn't the walkaround.
 const FIRST = EXERCISES.find((e) => !e.walk) || EXERCISES[0];
 
 // ---------- Electron setup: own name and data folder, exact 2x pixels ----------
@@ -91,18 +102,33 @@ app.commandLine.appendSwitch('force-device-scale-factor', '1'); // so zoom 2 is 
 // Gino's rep moves are transitions, so each lands on the end of its move. (The shoulder-roll
 // dot is an animation, so in the stills it stays where it starts.)
 const FREEZE_CSS = '*, *::before, *::after { animation: none !important; transition: none !important; }';
-// Stop the card's clock too, so a timer reads the same however long a capture takes,
-// and skip the reminder's demo loop (it starts moving Gino 650 ms after the card shows).
-const FREEZE_JS = `{
+// Stop the card's clock too, so a timer reads the same however long a capture takes, and
+// its timeouts, so the reminder's demo loop (it starts moving Gino 650 ms after the card
+// shows) never starts and an ending never closes. MEASURE waits with the real one, sleep.
+const FREEZE_JS = `
+  const sleep = window.setTimeout.bind(window);
   const t = performance.now();
   Object.defineProperty(performance, 'now', { configurable: true, value: () => t });
-  if (window.Gino && window.Gino.demo) window.Gino.demo = () => () => {};
-}`;
+  window.setTimeout = () => 0;
+`;
+
+// What MEASURE sends back from the page.
+interface CardInfo {
+  rect: { left: number; top: number; right: number; bottom: number };
+  pad: { top: number; right: number; bottom: number; left: number };
+  view: { w: number; h: number };
+  state: string | undefined;
+  big: string;
+  sub: string;
+  mirrored: boolean;
+  motionOk: boolean;
+  fontsOk: boolean;
+}
 
 const MEASURE = `
   document.body.offsetHeight;
   await document.fonts.ready;
-  await new Promise((r) => setTimeout(r, 150)); // not requestAnimationFrame: a hidden window may never fire it
+  await new Promise((r) => sleep(r, 150)); // not requestAnimationFrame: a hidden window may never fire it
   document.body.offsetHeight;
   await document.fonts.ready;
   const card = document.getElementById('card');
@@ -131,21 +157,21 @@ const MEASURE = `
 `;
 
 let captureRetries = 0;
-const warnings = [];
-const warn = (msg) => {
+const warnings: string[] = [];
+const warn = (msg: string) => {
   warnings.push(msg);
   console.warn(`  ! ${msg}`);
 };
 
-function withTimeout(promise, ms, what) {
-  let id;
-  const t = new Promise((_, reject) => {
+function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  let id: ReturnType<typeof setTimeout> | undefined;
+  const t = new Promise<never>((_, reject) => {
     id = setTimeout(() => reject(new Error(`${what} timed out after ${ms / 1000}s`)), ms);
   });
   return Promise.race([promise, t]).finally(() => clearTimeout(id));
 }
 
-function makeWindow() {
+function makeWindow(): BrowserWindow {
   const win = new BrowserWindow({
     show: false,
     width: VIEW_W * ZOOM,
@@ -163,25 +189,23 @@ function makeWindow() {
       spellcheck: false,
     },
   });
-  win.webContents.on('console-message', (e, level, message) => {
-    const lvl = e && e.level !== undefined ? e.level : level;
-    const msg = e && e.message !== undefined ? e.message : message;
-    if (lvl === 'error' || lvl === 3) warn(`card console: ${msg}`);
+  win.webContents.on('console-message', (e) => {
+    if (e.level === 'error') warn(`card console: ${e.message}`);
   });
   return win;
 }
 
 // A fresh card per scene: reload, freeze, run the scene, then measure.
-async function render(win, code, data) {
+async function render(win: BrowserWindow, code: string, data: Payload): Promise<CardInfo> {
   for (let attempt = 0; attempt < 3; attempt++) {
     await withTimeout(win.loadFile(CARD_HTML), 15000, 'loading card.html');
     win.webContents.setZoomFactor(ZOOM);
     await win.webContents.insertCSS(FREEZE_CSS);
-    const info = await withTimeout(
+    const info = await withTimeout<CardInfo>(
       win.webContents.executeJavaScript(`(async () => {
         ${FREEZE_JS}
         const c = window.__card;
-        if (!c) throw new Error('window.__card is missing. Is src/card.js half-edited? Wait a minute and re-run.');
+        if (!c) throw new Error('window.__card is missing. Is build/card.js missing, or src/card.ts half-edited? Wait a minute and re-run.');
         const d = ${JSON.stringify(data)};
         ${code}
         ${MEASURE}
@@ -200,13 +224,13 @@ async function render(win, code, data) {
 
 // Crop to the card plus the window's transparent margin (the .stage padding), so the
 // drop shadow comes along, exactly as the real card window frames it.
-async function capture(win, info, file) {
+async function capture(win: BrowserWindow, info: CardInfo, file: string) {
   const x = Math.floor(info.rect.left - info.pad.left);
   const y = Math.floor(info.rect.top - info.pad.top);
   const w = Math.min(info.view.w, Math.ceil(info.rect.right + info.pad.right)) - x;
   const h = Math.min(info.view.h, Math.ceil(info.rect.bottom + info.pad.bottom)) - y;
   const rect = { x: x * ZOOM, y: y * ZOOM, width: w * ZOOM, height: h * ZOOM };
-  let img = null;
+  let img: NativeImage | null = null;
   // A hidden window can hand back the frame before the last change: take one to throw away.
   await withTimeout(win.webContents.capturePage(rect, { stayHidden: true }), 15000, 'capturePage').catch(() => {});
   // It sometimes has no frame ready yet either (Chromium says "UnknownVizError"): ask again.
@@ -233,16 +257,45 @@ async function capture(win, info, file) {
 
 // ---------- scenes ----------
 
-const shots = [];
+type Section = 'first' | 'stretch' | 'ending';
+interface Scene {
+  section: Section;
+  group?: Exercise | null; // the stretch it belongs to, if any
+  slug: string;
+  label: string;
+  note?: string | ((info: CardInfo) => string);
+  code: string; // run in the page, with the hooks as c and the payload as d
+  data: Payload;
+}
+interface Shot {
+  section: Section;
+  group: Exercise | null;
+  file: string;
+  label: string;
+  note: string;
+  info: CardInfo;
+  w: number; // CSS px; the PNG is ZOOM times this
+  h: number;
+  cornerAlpha: number;
+}
+// How a stretch's timer was shown: each part of a guided rep, both sides, or one screen.
+type TimerKind = 'reps' | 'sides' | 'timer';
+// What the card.js in use has (see run()).
+interface Probe {
+  card: boolean;
+  jumpTo: boolean;
+}
+
+const shots: Shot[] = [];
 let seq = 0;
 
-const slugify = (s) =>
+const slugify = (s: string) =>
   String(s)
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-|-$/g, '');
 
-async function shoot(win, { section, group = null, slug, label, note = '', code, data }) {
+async function shoot(win: BrowserWindow, { section, group = null, slug, label, note = '', code, data }: Scene) {
   const info = await render(win, code, data);
   const file = `${String(++seq).padStart(2, '0')}-${slug}.png`;
   const cap = await capture(win, info, path.join(OUT, file));
@@ -255,11 +308,11 @@ async function shoot(win, { section, group = null, slug, label, note = '', code,
   return info;
 }
 
-const timerNote = (info) => [info.big && `${info.big} left`, info.sub].filter(Boolean).join(' · ');
+const timerNote = (info: CardInfo) => [info.big && `${info.big} left`, info.sub].filter(Boolean).join(' · ');
 
 // The running timer, by the kind of stretch.
-async function shootTimer(win, ex, p, slug, hasJumpTo) {
-  const at = (f) => Math.round(workSeconds(ex) * f);
+async function shootTimer(win: BrowserWindow, ex: Exercise, p: Payload, slug: string, hasJumpTo: boolean): Promise<TimerKind> {
+  const at = (f: number) => Math.round(workSeconds(ex) * f);
   const phases = repPhases(ex);
 
   if (hasJumpTo && phases.length) {
@@ -287,13 +340,13 @@ async function shootTimer(win, ex, p, slug, hasJumpTo) {
       }
       return 'reps';
     } catch (e) {
-      warn(`${ex.id}: guided rep screens failed (${e.message}); showing one timer screen instead`);
+      warn(`${ex.id}: guided rep screens failed (${e instanceof Error ? e.message : e}); showing one timer screen instead`);
       for (const s of shots.splice(mark)) fs.rmSync(path.join(OUT, s.file), { force: true });
     }
   }
 
   // With jumpTo, rep 1 is the hold (for sides, 1 and 2 are the two sides); without, a time.
-  const goTo = (rep, f) => (hasJumpTo ? `c.jumpTo(${rep});` : `c.setElapsed(${at(f)});`);
+  const goTo = (rep: number, f: number) => (hasJumpTo ? `c.jumpTo(${rep});` : `c.setElapsed(${at(f)});`);
 
   if (ex.sides) {
     await shoot(win, {
@@ -330,6 +383,7 @@ async function shootTimer(win, ex, p, slug, hasJumpTo) {
   return 'timer';
 }
 
+// Everything this writes to screens/. gino.js too: older runs copied it next to live.html.
 const GENERATED = /^(\d+-[a-z0-9-]+\.png|index\.html|page\.html|live\.html|files\.json|card\.css|card\.js|gino\.js|exercises\.js)$/;
 
 async function run() {
@@ -351,10 +405,10 @@ async function run() {
   );
 
   // Does this card.js have the guided-rep hook yet?
-  const probe = await win.webContents.executeJavaScript(
+  const probe: Probe = await win.webContents.executeJavaScript(
     `({ card: !!window.__card, jumpTo: !!(window.__card && typeof window.__card.jumpTo === 'function') })`
   );
-  if (!probe.card) throw new Error('window.__card is missing. Is src/card.js half-edited? Wait a minute and re-run.');
+  if (!probe.card) throw new Error('window.__card is missing. Is build/card.js missing, or src/card.ts half-edited? Wait a minute and re-run.');
   const withRep = EXERCISES.filter((e) => repPhases(e).length).map((e) => e.id);
   console.log(`Card: jumpTo ${probe.jumpTo ? 'found' : 'not found'}; exercises with rep phases: ${withRep.join(', ') || 'none'}`);
 
@@ -369,10 +423,10 @@ async function run() {
   });
 
   console.log('Stretches');
-  const timerKinds = {};
+  const timerKinds: Record<string, TimerKind> = {};
   for (const [i, ex] of EXERCISES.entries()) {
     const slug = slugify(ex.id || ex.name);
-    const p = { ...BASE, exercise: ex };
+    const p: Payload = { ...BASE, exercise: ex };
     await shoot(win, {
       section: 'stretch',
       group: ex,
@@ -397,9 +451,10 @@ async function run() {
 
   console.log('Endings');
   const ex = EXERCISES.find((e) => e.id === 'chin-tucks') || FIRST;
-  const p = { ...BASE, exercise: ex };
+  const p: Payload = { ...BASE, exercise: ex };
   const stopAt = Math.round(workSeconds(ex) * 0.4);
-  const endings = [
+  // slug, label, note, the scene, its card
+  const endings: [string, string, string, string, Payload][] = [
     ['done-first', 'Done, first of the day', 'the timer ran out, or Done was pressed', 'c.show(d); await c.finish();', { ...p, todayCount: 0 }],
     ['done-later', 'Done, later in the day', 'the count includes this one', 'c.show(d); await c.finish();', p],
     ['snoozed', 'Snoozed', `after Snooze ${S.snoozeMin} min`, 'c.show(d); c.snooze(false);', p],
@@ -414,14 +469,18 @@ async function run() {
   checkMenuLabels();
 
   // The live card: the card's files, and live.html made from card.html.
-  for (const f of LIVE_FILES) fs.copyFileSync(path.join(SRC, f), path.join(OUT, f));
+  // The build's source maps aren't published with the page, so drop the line pointing to them.
+  for (const [f, from] of Object.entries(LIVE_FILES)) {
+    const text = fs.readFileSync(from, 'utf8').replace(/\n\/\/# sourceMappingURL=\S*\s*$/, '\n');
+    fs.writeFileSync(path.join(OUT, f), text);
+  }
   fs.writeFileSync(path.join(OUT, 'live.html'), liveHtml());
 
   const { fragment, full } = report({ probe, timerKinds });
   fs.writeFileSync(path.join(OUT, 'page.html'), fragment);
   fs.writeFileSync(path.join(OUT, 'index.html'), full);
 
-  const files = [...shots.map((s) => s.file), 'live.html', ...LIVE_FILES];
+  const files = [...shots.map((s) => s.file), 'live.html', ...Object.keys(LIVE_FILES)];
   fs.writeFileSync(path.join(OUT, 'files.json'), `${JSON.stringify(files, null, 2)}\n`);
   const bytes = files.reduce((n, f) => n + fs.statSync(path.join(OUT, f)).size, 0);
 
@@ -434,48 +493,45 @@ async function run() {
   if (warnings.length) console.log(`${warnings.length} warning(s), see above.`);
 }
 
-// The menu mock copies labels from buildMenu() in main.js. Say so if they drift apart.
+// The menu mock copies labels from buildMenu() in main.ts. Say so if they drift apart.
 function checkMenuLabels() {
   const labels = [
     'Stretch now', 'Pause', 'Resume', 'For 30 minutes', 'For 1 hour', 'For 2 hours', 'Until tomorrow',
     'Remind me every', 'Hold off during calls and full-screen apps', 'Start with Windows', 'Quit Gino',
     'No stretches yet today', 'Done today: ', 'Stretch on screen', 'Holding off: ', 'Paused until ', 'Next stretch in ',
   ];
-  for (const l of labels) if (!MAIN_SRC.includes(l)) warn(`menu mock label "${l}" is not in main.js any more`);
-  if (!HAS_RESET_ITEM) console.log('  (note) "Reset card position" is not in main.js yet; the mock shows it as new');
+  for (const l of labels) if (!MAIN_SRC.includes(l)) warn(`menu mock label "${l}" is not in main.ts any more`);
+  if (!HAS_RESET_ITEM) console.log('  (note) "Reset card position" is not in main.ts yet; the mock shows it as new');
 }
 
 // ---------- live.html: the real card in a frame ----------
 
-const esc = (s) =>
-  String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
-const scriptJson = (v) => JSON.stringify(v).replace(/</g, '\\u003c');
+const ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+const esc = (s: string | number) => String(s).replace(/[&<>"']/g, (ch) => ENTITIES[ch]);
+const scriptJson = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
 
-// Made from src/card.html so it stays in step with the app. Stands in for preload.js and
-// main.js: the card shows the card named in the hash (live.html#chin-tucks), and when it
+// Made from src/card.html so it stays in step with the app. Stands in for preload.ts and
+// main.ts: the card shows the card named in the hash (live.html#chin-tucks), and when it
 // closes, it comes back, so each frame loops forever.
-function liveHtml() {
+function liveHtml(): string {
   let html = fs.readFileSync(CARD_HTML, 'utf8');
-  const swap = (from, to, what) => {
+  const swap = (from: string | RegExp, to: string, what: string) => {
     const next = html.replace(from, to);
     if (next === html) throw new Error(`src/card.html changed shape: can't find ${what}`);
     html = next;
   };
   html = html.replace(/<meta http-equiv="Content-Security-Policy"[^>]*>\s*/i, '');
   html = html.replace(/<link[^>]*href="\.\.\/node_modules\/[^"]*"[^>]*>\s*/g, '');
-  swap(/<!doctype html>\s*/i, '<!doctype html>\n<!-- Made by dev/screens.js from src/card.html. Edit those, not this. -->\n', 'the doctype');
+  swap(/<!doctype html>\s*/i, '<!doctype html>\n<!-- Made by dev/screens.ts from src/card.html. Edit those, not this. -->\n', 'the doctype');
   swap(/<meta charset="utf-8">/i, '<meta charset="utf-8">\n<meta name="viewport" content="width=device-width, initial-scale=1">', 'the charset meta');
   html = html.replace(/<title>[^<]*<\/title>/i, '<title>Gino live card</title>');
   swap('<link rel="stylesheet" href="card.css">', `<link rel="stylesheet" href="${esc(GOOGLE_FONTS)}">\n<link rel="stylesheet" href="card.css">`, 'the card.css link');
 
-  const shim = `<script>
-// Stands in for preload.js: exercises.js is a CommonJS module, so give it somewhere to go.
-var module = { exports: {} };
-</script>
-<script src="exercises.js"></script>
+  const shim = `<script src="exercises.js"></script>
 <script>
+// Stands in for preload.ts: exercises.js has put the stretches on window.GinoExercises.
 (() => {
-  const EXERCISES = module.exports;
+  const EXERCISES = window.GinoExercises.EXERCISES;
   const WELCOME = ${scriptJson(WELCOME)};
   const FIRST = ${scriptJson(FIRST.id)};
   const home = decodeURIComponent(location.hash.slice(1)) || 'welcome';
@@ -518,13 +574,13 @@ var module = { exports: {} };
   if (window.ResizeObserver) new ResizeObserver(() => window.ginoApi.resize(card.offsetHeight + room)).observe(card);
 })();
 </script>`;
-  swap('<script src="card.js"></script>', shim, 'the card.js script tag');
+  swap('<script src="../build/card.js"></script>', shim, 'the card.js script tag');
   return html;
 }
 
 // ---------- the report ----------
 
-const fmtDur = (sec) => {
+const fmtDur = (sec: number) => {
   const t = Math.round(sec);
   if (t < 60) return `${t} s`;
   const m = Math.floor(t / 60);
@@ -532,7 +588,7 @@ const fmtDur = (sec) => {
   return s ? `${m} min ${s} s` : `${m} min`;
 };
 
-function figure(s) {
+function figure(s: Shot) {
   const alt = `${s.group ? `${s.group.name}: ` : ''}${s.label}${s.note ? `, ${s.note}` : ''}`;
   return `<figure class="shot" style="width:${s.w + 8}px">
   <div class="desk"><img src="${esc(s.file)}" width="${s.w}" height="${s.h}" alt="${esc(alt)}"></div>
@@ -558,14 +614,14 @@ function motionNote() {
   return `<p class="note motion-note">${text}</p>`;
 }
 
-function liveHint(ex) {
+function liveHint(ex: CardContent) {
   if (ex === WELCOME) return 'Press Try one now to get the first stretch';
   if (repPhases(ex).length) return 'Press Start to run it: Gino moves with each rep';
   if (ex.sides) return 'Press Start to run it: Gino switches sides halfway';
   return 'Press Start to run the timer';
 }
 
-function liveFigure(ex, h) {
+function liveFigure(ex: CardContent, h: number) {
   const id = ex === WELCOME ? 'welcome' : ex.id;
   if (!/^[A-Za-z0-9-]+$/.test(id)) warn(`exercise id "${id}" isn't letters, digits and dashes: its live frame may not find it`);
   return `<figure class="shot live-fig" style="width:${VIEW_W + 8}px">
@@ -583,8 +639,11 @@ const DOT = '<i class="mark dot" aria-hidden="true"></i>';
 const CHEV = '<svg class="chev" viewBox="0 0 16 16" width="10" height="10" aria-hidden="true"><path d="M6 3.5L10.5 8L6 12.5" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const CARET = '<svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true"><path d="M3.5 10L8 5.5L12.5 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 
-const menuHeight = (items) => items.reduce((h, it) => h + (it === 'sep' ? SEP : ROW), PAD * 2);
-function rowTop(items, label) {
+// A menu row ('sep' for a separator): dis greyed out, hot under the pointer, sub has a submenu.
+type MenuItem = 'sep' | { label: string; dis?: boolean; hot?: boolean; check?: boolean; radio?: boolean; sub?: boolean };
+
+const menuHeight = (items: MenuItem[]) => items.reduce((h, it) => h + (it === 'sep' ? SEP : ROW), PAD * 2);
+function rowTop(items: MenuItem[], label: string) {
   let y = PAD;
   for (const it of items) {
     if (it !== 'sep' && it.label === label) return y;
@@ -593,7 +652,7 @@ function rowTop(items, label) {
   return PAD;
 }
 
-function menuHtml(items, cls = '', style = '') {
+function menuHtml(items: MenuItem[], cls = '', style = '') {
   const rows = items.map((it) => {
     if (it === 'sep') return '<div class="sep"></div>';
     const c = ['mi', it.dis && 'dis', it.hot && 'hot'].filter(Boolean).join(' ');
@@ -602,7 +661,7 @@ function menuHtml(items, cls = '', style = '') {
   return `<div class="w11 ${cls}" role="presentation"${style ? ` style="${style}"` : ''}>${rows.join('')}</div>`;
 }
 
-function trayItems({ paused, hot, resetOn }) {
+function trayItems({ paused, hot, resetOn }: { paused: boolean; hot?: string; resetOn?: boolean }): MenuItem[] {
   return [
     { label: paused ? 'Paused until 15:30' : 'Next stretch in 14 min', dis: true },
     { label: 'Done today: 2', dis: true },
@@ -626,7 +685,7 @@ try {
   TRAY_ICON = '';
 }
 
-function trayMock(items, sub, clock) {
+function trayMock(items: MenuItem[], sub: { parent: string; items: MenuItem[] } | null, clock: string) {
   let subHtml = '';
   if (sub) {
     // Line the submenu up with its item, but keep it above the taskbar like Windows does.
@@ -640,7 +699,7 @@ function trayMock(items, sub, clock) {
 </div>`;
 }
 
-const BUSY_WHEN = {
+const BUSY_WHEN: Record<string, string> = {
   'screen locked': 'Windows says the screen is locked',
   'full-screen app': 'an app is full screen',
   'full-screen game': 'a full-screen game is running',
@@ -649,7 +708,7 @@ const BUSY_WHEN = {
 
 // Theme: every color is a token. Light on :root, dark for a dark system unless the page
 // is set to light, and dark again when the page is set to dark.
-const LIGHT = {
+const LIGHT: Record<string, string> = {
   bg: '#F4F6F1',
   panel: '#FBFCF9',
   fg: '#2E3327', // ink
@@ -667,7 +726,7 @@ const LIGHT = {
   'w11-shadow': '0 8px 16px rgba(0, 0, 0, .16), 0 0 2px rgba(0, 0, 0, .1)',
   'w11-bar': 'rgba(240, 242, 245, .92)',
 };
-const DARK = {
+const DARK: Record<string, string> = {
   bg: '#141713',
   panel: '#1B1F1A',
   fg: '#E4E8DF',
@@ -685,7 +744,7 @@ const DARK = {
   'w11-shadow': '0 8px 18px rgba(0, 0, 0, .4), 0 0 0 1px rgba(0, 0, 0, .3)',
   'w11-bar': 'rgba(30, 30, 30, .92)',
 };
-const tokens = (t, indent) => Object.entries(t).map(([k, v]) => `${indent}--${k}: ${v};`).join('\n');
+const tokens = (t: Record<string, string>, indent: string) => Object.entries(t).map(([k, v]) => `${indent}--${k}: ${v};`).join('\n');
 
 const CSS = `
 :root {
@@ -781,7 +840,7 @@ figcaption b { color: var(--fg); }
 
 .mock-label { display: inline-block; margin: 0 0 14px; padding: 6px 12px; font-size: 13.5px; background: var(--chip); border-left: 3px solid var(--accent); border-radius: 4px; }
 
-/* Windows 11 tray menu, drawn to match buildMenu() in main.js */
+/* Windows 11 tray menu, drawn to match buildMenu() in main.ts */
 figure.tray-fig { width: max-content; }
 .desk.tray { position: relative; padding: 18px 16px 58px; overflow: hidden; }
 .menus { display: flex; align-items: flex-start; justify-content: flex-end; margin-right: 86px; }
@@ -864,15 +923,15 @@ const SCRIPT = `
 })();
 `;
 
-function report({ probe, timerKinds }) {
+function report({ probe, timerKinds }: { probe: Probe; timerKinds: Record<string, TimerKind> }) {
   const now = new Date();
   const date = now.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
   const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
   const clock = `15:12<br>${now.toLocaleDateString('en-GB')}`;
-  const bySection = (sec) => shots.filter((s) => s.section === sec);
+  const bySection = (sec: Section) => shots.filter((s) => s.section === sec);
 
   // Live frames start at the reminder still's height, then follow the card.
-  const startHeight = (ex) => {
+  const startHeight = (ex: CardContent) => {
     const s = shots.find((x) => (ex === WELCOME ? x.section === 'first' : x.group === ex));
     return s ? s.h : 200;
   };
@@ -947,7 +1006,7 @@ ${figs}
 <header class="top"><div class="wrap">
   <h1><span>Gino: every screen</span></h1>
   <p class="meta">Generated ${esc(date)}, ${esc(time)} · ${shots.length} stills, ${EXERCISES.length + 1} live cards and the tray menu · Regenerate with <code>npm run screens</code></p>
-  <p class="meta">Everything here is the real card (<code>src/card.html</code>) with the stretches from <code>src/exercises.js</code>. The stills are rendered at 2x with Gino's animations paused.</p>
+  <p class="meta">Everything here is the real card (<code>src/card.html</code>) with the stretches from <code>src/exercises.ts</code>. The stills are rendered at 2x with Gino's animations paused.</p>
 </div></header>
 
 <nav class="toc" aria-label="Sections"><div class="wrap">
@@ -1019,7 +1078,7 @@ ${endings}
 
 <section class="part" id="tray">
   <h2>Tray menu</h2>
-  <p class="mock-label">Drawn in HTML to match <code>buildMenu()</code> in main.js. Not a screenshot: Windows draws the real menu, in its own light or dark style.</p>
+  <p class="mock-label">Drawn in HTML to match <code>buildMenu()</code> in main.ts. Not a screenshot: Windows draws the real menu, in its own light or dark style.</p>
   <p class="lead">Click or right-click Gino's icon by the clock. Windows 11 may hide new tray icons under the <b>^</b> arrow.</p>
   <div class="shots">
 ${trayFigs}
@@ -1043,7 +1102,7 @@ ${trayFigs}
 ${tips}
     </tbody>
   </table>
-  <p class="fine">Checked in this order: paused, card on screen, holding off, countdown. Times follow your clock's format. With <code>npm run fast</code> it says sec instead of min. Source: <code>statusLine()</code> and <code>BUSY_STATES</code> in main.js.</p>
+  <p class="fine">Checked in this order: paused, card on screen, holding off, countdown. Times follow your clock's format. With <code>npm run fast</code> it says sec instead of min. Source: <code>statusLine()</code> and <code>BUSY_STATES</code> in main.ts.</p>
 </section>
 
 </main>
@@ -1087,7 +1146,7 @@ app.on('window-all-closed', () => {}); // quit when the report is written, not b
 app.whenReady()
   .then(run)
   .then(() => app.quit())
-  .catch((e) => {
-    console.error(`\nScreens failed: ${e && e.stack ? e.stack : e}`);
+  .catch((e: unknown) => {
+    console.error(`\nScreens failed: ${e instanceof Error && e.stack ? e.stack : e}`);
     app.exit(1);
   });

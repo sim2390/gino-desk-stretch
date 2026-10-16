@@ -1,0 +1,19 @@
+{
+  // Type checking only (npm run typecheck). esbuild compiles: see scripts/build.mjs.
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "strict": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "isolatedModules": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "noEmit": true
+  },
+  "include": ["main.ts", "preload.ts", "src/**/*.ts", "test/**/*.ts", "dev/**/*.ts"]
+}

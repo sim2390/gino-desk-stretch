@@ -1,13 +1,15 @@
-'use strict';
 // Gino: a desk stretch coach that lives in the tray (Windows) or menu bar (macOS).
 
-const path = require('path');
-const fs = require('fs');
-const { execFile } = require('child_process');
-const { app, BrowserWindow, Tray, Menu, screen, powerMonitor, ipcMain, nativeImage } = require('electron');
-const { Scheduler } = require('./src/scheduler');
-const { cardBounds } = require('./src/placement');
-const EXERCISES = require('./src/exercises');
+import path from 'node:path';
+import fs from 'node:fs';
+import { execFile } from 'node:child_process';
+import { app, BrowserWindow, Tray, Menu, screen, powerMonitor, ipcMain, nativeImage } from 'electron';
+import type { LoginItemSettingsOptions, MenuItemConstructorOptions, NativeImage, Rectangle } from 'electron';
+import { Scheduler } from './src/scheduler';
+import { cardBounds } from './src/placement';
+import { EXERCISES } from './src/exercises';
+import { IPC } from './src/ipc';
+import type { ActionReply, CardAction, CardContent, CardMode, Exercise, Settings, ShowPayload, Stats } from './src/types';
 
 // `npm run fast` turns minutes into seconds so you can watch a full cycle quickly.
 const FAST = process.argv.includes('--fast') || process.env.GINO_FAST === '1';
@@ -21,7 +23,7 @@ const WIN_W = 440; // card 404 + shadow room
 const WIN_H = 214;
 const EDGE = 8; // gap to the screen edge
 
-const DEFAULT_SETTINGS = {
+const DEFAULT_SETTINGS: Settings = {
   intervalMin: 20, // active screen time between stretches
   snoozeMin: 10,
   idleResetMin: 5, // idle this long counts as a break and restarts the timer
@@ -30,18 +32,18 @@ const DEFAULT_SETTINGS = {
   cardPos: null, // where you last dragged the card, { x, bottom }; null = corner of the main screen
   welcomed: false,
 };
-const DEFAULT_STATS = { days: {}, reminders: 0, cycle: 0 };
+const DEFAULT_STATS: Stats = { days: {}, reminders: 0, cycle: 0 };
 
-let settings;
-let stats;
-let sched;
-let tray = null;
-let cardWin = null;
-let cardReady = null;
+let settings: Settings;
+let stats: Stats;
+let sched: Scheduler;
+let tray: Tray | null = null;
+let cardWin: BrowserWindow | null = null;
+let cardReady: Promise<void> | null = null;
 let cardVisible = false;
-let placedAt = null; // where we last put the card, to tell our own moves from your drags
-let moveTimer = null;
-let waiting = null; // reason a due stretch is being held back
+let placedAt: Rectangle | null = null; // where we last put the card, to tell our own moves from your drags
+let moveTimer: NodeJS.Timeout | undefined;
+let waiting: string | null = null; // reason a due stretch is being held back
 let checking = false;
 let lastCheck = 0;
 let lastTick = Date.now();
@@ -49,36 +51,43 @@ let showAfterClose = false;
 
 // ---------- storage ----------
 
-const storePath = (name) => path.join(app.getPath('userData'), name);
+// What each file in the userData folder holds.
+interface Stores {
+  'settings.json': Settings;
+  'stats.json': Stats;
+}
 
-function readJson(name, fallback) {
+const storePath = (name: keyof Stores) => path.join(app.getPath('userData'), name);
+
+function readJson<N extends keyof Stores>(name: N, fallback: Stores[N]): Stores[N] {
   try {
-    return { ...fallback, ...JSON.parse(fs.readFileSync(storePath(name), 'utf8')) };
+    const saved: Partial<Stores[N]> = JSON.parse(fs.readFileSync(storePath(name), 'utf8'));
+    return { ...fallback, ...saved };
   } catch {
     return JSON.parse(JSON.stringify(fallback));
   }
 }
 
-function writeJson(name, data) {
+function writeJson<N extends keyof Stores>(name: N, data: Stores[N]): void {
   try {
     fs.mkdirSync(app.getPath('userData'), { recursive: true });
     fs.writeFileSync(storePath(name), JSON.stringify(data, null, 2));
   } catch (e) {
-    console.error(`Could not save ${name}: ${e.message}`);
+    console.error(`Could not save ${name}: ${(e as Error).message}`);
   }
 }
 
 const saveSettings = () => writeJson('settings.json', settings);
 const saveStats = () => writeJson('stats.json', stats);
 
-function today() {
+function today(): string {
   const d = new Date();
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-const todayCount = () => stats.days[today()] || 0;
+const todayCount = (): number => stats.days[today()] || 0;
 
-function addDone() {
+function addDone(): void {
   stats.days[today()] = todayCount() + 1;
   const keep = Object.keys(stats.days).sort().slice(-90); // about three months
   stats.days = Object.fromEntries(keep.map((k) => [k, stats.days[k]]));
@@ -86,12 +95,12 @@ function addDone() {
 }
 
 // Every third reminder is the walkaround; the rest rotate through the stretches.
-function pickNext() {
+function pickNext(): Exercise {
   const walk = EXERCISES.find((e) => e.walk);
   const others = EXERCISES.filter((e) => !e.walk);
   const n = stats.reminders || 0;
   stats.reminders = n + 1;
-  let ex;
+  let ex: Exercise;
   if (walk && n % 3 === 2) {
     ex = walk;
   } else {
@@ -126,7 +135,7 @@ Get-ChildItem -Path $base -Recurse | ForEach-Object {
 Write-Output ('{"state":' + $state + ',"mic":' + $mic.ToString().ToLower() + '}')
 `;
 
-const BUSY_STATES = {
+const BUSY_STATES: Record<number, string> = {
   1: 'screen locked',
   2: 'full-screen app',
   3: 'full-screen game',
@@ -134,7 +143,9 @@ const BUSY_STATES = {
   7: 'full-screen app',
 };
 
-function quietCheck() {
+type Quiet = { busy: false } | { busy: true; reason: string };
+
+function quietCheck(): Promise<Quiet> {
   if (!IS_WIN || !settings.waitWhenBusy) return Promise.resolve({ busy: false });
   const encoded = Buffer.from(QUIET_PS, 'utf16le').toString('base64');
   return new Promise((resolve) => {
@@ -145,8 +156,8 @@ function quietCheck() {
       (err, stdout) => {
         if (err) return resolve({ busy: false }); // if the check fails, don't block reminders
         try {
-          const line = String(stdout).trim().split(/\r?\n/).pop();
-          const r = JSON.parse(line);
+          const line = String(stdout).trim().split(/\r?\n/).pop() ?? '';
+          const r: { state: number; mic: boolean } = JSON.parse(line);
           if (r.mic) return resolve({ busy: true, reason: 'you seem to be on a call' });
           if (BUSY_STATES[r.state]) return resolve({ busy: true, reason: BUSY_STATES[r.state] });
           resolve({ busy: false });
@@ -160,7 +171,7 @@ function quietCheck() {
 
 // ---------- the card window ----------
 
-function createCard() {
+function createCard(): void {
   cardWin = new BrowserWindow({
     width: WIN_W,
     height: WIN_H,
@@ -180,6 +191,7 @@ function createCard() {
     hasShadow: false,
     backgroundColor: '#00000000',
     webPreferences: {
+      // The bundles run from build/; the card's page and the icons stay where they are.
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
@@ -189,7 +201,7 @@ function createCard() {
   });
   cardWin.setAlwaysOnTop(true, 'screen-saver');
   if (IS_MAC) cardWin.setVisibleOnAllWorkspaces(true);
-  cardReady = cardWin.loadFile(path.join(__dirname, 'src', 'card.html'));
+  cardReady = cardWin.loadFile(path.join(__dirname, '..', 'src', 'card.html'));
   cardWin.on('closed', () => {
     cardWin = null;
     cardVisible = false;
@@ -204,7 +216,7 @@ function createCard() {
   cardWin.on('system-context-menu', (e) => e.preventDefault());
 }
 
-function placeCard(height) {
+function placeCard(height: number): void {
   if (!cardWin) return;
   placedAt = cardBounds({
     primary: screen.getPrimaryDisplay().workArea,
@@ -217,7 +229,7 @@ function placeCard(height) {
   cardWin.setBounds(placedAt);
 }
 
-function rememberCardPos() {
+function rememberCardPos(): void {
   if (!cardWin || cardWin.isDestroyed()) return;
   const b = cardWin.getBounds();
   // macOS reports our own setBounds as a move too; only a real drag lands somewhere new.
@@ -227,36 +239,38 @@ function rememberCardPos() {
   saveSettings();
 }
 
-function resetCardPos() {
+function resetCardPos(): void {
   settings.cardPos = null;
   saveSettings();
   if (cardVisible && cardWin) placeCard(cardWin.getBounds().height);
 }
 
-async function showCard(exercise, mode = 'stretch') {
+async function showCard(exercise: CardContent, mode: CardMode = 'stretch'): Promise<void> {
   if (!cardWin) createCard();
   try {
     await cardReady;
   } catch (e) {
-    console.error(`Card failed to load: ${e.message}`);
+    console.error(`Card failed to load: ${(e as Error).message}`);
     return;
   }
+  if (!cardWin) return; // closed while it loaded, which only happens on quit
   placeCard(WIN_H);
-  cardWin.webContents.send('show', {
+  const payload: ShowPayload = {
     mode,
     exercise,
     todayCount: todayCount(),
     snoozeMin: settings.snoozeMin,
     intervalMin: settings.intervalMin,
     autoSnoozeMin: settings.autoSnoozeMin,
-  });
+  };
+  cardWin.webContents.send(IPC.show, payload);
   cardWin.showInactive();
   cardVisible = true;
   waiting = null;
   updateTray();
 }
 
-function hideCard() {
+function hideCard(): void {
   if (cardWin && !cardWin.isDestroyed()) cardWin.hide();
   cardVisible = false;
   updateTray();
@@ -267,13 +281,13 @@ function hideCard() {
 }
 
 // Put the card away from this side, without the card's own close flow.
-function forceHideCard() {
-  if (cardWin && !cardWin.isDestroyed()) cardWin.webContents.send('hide');
+function forceHideCard(): void {
+  if (cardWin && !cardWin.isDestroyed()) cardWin.webContents.send(IPC.hide);
   showAfterClose = false;
   hideCard();
 }
 
-function welcomeCard() {
+function welcomeCard(): CardContent {
   const where = IS_MAC
     ? 'I live in the menu bar.'
     : 'I live in the tray by the clock. If you can\'t see me, I\'m under the ^ arrow: drag me out.';
@@ -289,7 +303,7 @@ function welcomeCard() {
 
 // ---------- scheduling ----------
 
-function tick() {
+function tick(): void {
   const now = Date.now();
   const dt = now - lastTick;
   lastTick = now;
@@ -316,7 +330,7 @@ function tick() {
   updateTray();
 }
 
-async function maybeShow() {
+async function maybeShow(): Promise<void> {
   if (checking || cardVisible) return;
   if (waiting && Date.now() - lastCheck < 60 * 1000) return; // re-check once a minute
   checking = true;
@@ -332,13 +346,13 @@ async function maybeShow() {
   showCard(pickNext());
 }
 
-function pauseFor(minutes) {
+function pauseFor(minutes: number): void {
   sched.pause(minutes * REAL_MIN);
   waiting = null;
   updateTray();
 }
 
-function pauseUntilTomorrow() {
+function pauseUntilTomorrow(): void {
   const d = new Date();
   d.setDate(d.getDate() + 1);
   d.setHours(6, 0, 0, 0);
@@ -347,7 +361,7 @@ function pauseUntilTomorrow() {
   updateTray();
 }
 
-function setIntervalMin(m) {
+function setIntervalMin(m: number): void {
   settings.intervalMin = m;
   sched.setInterval(m * MIN);
   saveSettings();
@@ -356,13 +370,13 @@ function setIntervalMin(m) {
 
 // ---------- tray / menu bar ----------
 
-function fmtTime(ts) {
+function fmtTime(ts: number): string {
   const d = new Date(ts);
   const t = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return d.toDateString() === new Date().toDateString() ? t : `tomorrow ${t}`;
 }
 
-function statusLine() {
+function statusLine(): string {
   if (sched.isPaused()) return `Paused until ${fmtTime(sched.pausedUntil)}`;
   if (cardVisible) return 'Stretch on screen';
   if (waiting) return `Holding off: ${waiting}`;
@@ -370,12 +384,12 @@ function statusLine() {
   return `Next stretch in ${left} ${FAST ? 'sec' : 'min'}`;
 }
 
-function loginOptions() {
+function loginOptions(): LoginItemSettingsOptions {
   // Running from source, Windows needs to know which folder to start.
   return app.isPackaged ? {} : { path: process.execPath, args: [app.getAppPath()] };
 }
 
-function loginMenuItem() {
+function loginMenuItem(): MenuItemConstructorOptions {
   const label = IS_MAC ? 'Open at login' : 'Start with Windows';
   // On macOS this only works for the built app, not when running from source.
   const canToggle = IS_WIN || app.isPackaged;
@@ -394,15 +408,15 @@ function loginMenuItem() {
       try {
         app.setLoginItemSettings({ openAtLogin: item.checked, ...loginOptions() });
       } catch (e) {
-        console.error(`Could not change login item: ${e.message}`);
+        console.error(`Could not change login item: ${(e as Error).message}`);
       }
     },
   };
 }
 
-function buildMenu() {
+function buildMenu(): Menu {
   const n = todayCount();
-  const items = [
+  const items: MenuItemConstructorOptions[] = [
     { label: statusLine(), enabled: false },
     { label: n === 0 ? 'No stretches yet today' : `Done today: ${n}`, enabled: false },
     { type: 'separator' },
@@ -460,28 +474,28 @@ function buildMenu() {
   return Menu.buildFromTemplate(items);
 }
 
-function openMenu() {
+function openMenu(): void {
   if (tray) tray.popUpContextMenu(buildMenu());
 }
 
-function trayIcon() {
+function trayIcon(): NativeImage {
   const file = IS_MAC ? 'trayTemplate.png' : 'tray.png'; // @2x versions load automatically
-  const img = nativeImage.createFromPath(path.join(__dirname, 'assets', file));
+  const img = nativeImage.createFromPath(path.join(__dirname, '..', 'assets', file));
   if (IS_MAC) img.setTemplateImage(true);
   return img;
 }
 
-function updateTray() {
+function updateTray(): void {
   if (tray) tray.setToolTip(`Gino: ${statusLine()}`);
 }
 
 // ---------- app ----------
 
-function main() {
+function main(): void {
   app.on('second-instance', openMenu);
   app.on('window-all-closed', () => {}); // keep running in the tray
 
-  ipcMain.handle('card:action', (_event, name) => {
+  ipcMain.handle(IPC.action, (_event, name: CardAction): ActionReply => {
     switch (name) {
       case 'done':
         addDone();
@@ -501,8 +515,8 @@ function main() {
         return {};
     }
   });
-  ipcMain.on('card:resize', (_event, h) => placeCard(Number(h) || WIN_H));
-  ipcMain.on('card:closed', hideCard);
+  ipcMain.on(IPC.resize, (_event, h: unknown) => placeCard(Number(h) || WIN_H));
+  ipcMain.on(IPC.closed, hideCard);
 
   app.whenReady().then(() => {
     if (IS_WIN) app.setAppUserModelId('com.gino.stretch');

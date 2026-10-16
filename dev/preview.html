@@ -11,12 +11,12 @@
 </head>
 <body>
 <!-- Open in a browser started with --disable-web-security (file:// frames are cross-origin otherwise).
-     ?still freezes all motion, so Gino shows where each move ends rather than mid-move. -->
+     ?still freezes all motion, so Gino shows where each move ends rather than mid-move.
+     The stretches and the card come from build/: run npm run build first. -->
 <div class="grid" id="grid"></div>
-<script>var module = { exports: {} };</script>
-<script src="../src/exercises.js"></script>
+<script src="../build/exercises.js"></script>
 <script>
-  const byId = (id) => module.exports.find((e) => e.id === id);
+  const byId = (id) => GinoExercises.EXERCISES.find((e) => e.id === id);
   const ex = {
     chin: byId('chin-tucks'),
     neck: byId('neck-side'),

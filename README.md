@@ -81,8 +81,9 @@ when something doesn't look right.
 
 ## Make it yours
 
-The stretches are a plain list in [`src/exercises.js`](src/exercises.js): add, remove or reword them,
-change the timings, or split a stretch into guided reps. [Customizing Gino](docs/customizing.md)
+The stretches are a plain list in [`src/exercises.ts`](src/exercises.ts): add, remove or reword them,
+change the timings, or split a stretch into guided reps. A misspelled field or move name shows up as
+an error before Gino even starts. [Customizing Gino](docs/customizing.md)
 explains every field and shows how to preview your changes.
 
 ## Run it from the source
@@ -96,9 +97,11 @@ npm install
 npm start
 ```
 
-The first start downloads Electron (about 100 MB). `npm run fast` turns minutes into seconds so you
-can watch a whole cycle quickly, and `npm test` checks the timer and placement logic.
-[Development](docs/development.md) explains how the app fits together and how to build the installers.
+Gino is written in TypeScript. `npm start` compiles it first (it takes about a second), and the first
+start downloads Electron (about 100 MB). `npm run fast` turns minutes into seconds so you can watch a
+whole cycle quickly, `npm test` checks the timer and placement logic, and `npm run typecheck` checks the
+types. [Development](docs/development.md) explains how the app fits together and how to build the
+installers.
 
 ## Documentation
 

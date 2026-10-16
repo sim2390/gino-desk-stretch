@@ -1,12 +1,12 @@
 // Run with: npm test
-const assert = require('assert');
-const { Scheduler } = require('../src/scheduler');
+import assert from 'node:assert';
+import { Scheduler, type TickStatus } from '../src/scheduler';
 
 const MIN = 60 * 1000;
 let clock = 0;
 const make = () => new Scheduler({ intervalMs: 20 * MIN, idleResetMs: 5 * MIN, now: () => clock });
-const run = (s, minutes, idleMs = 0, step = 15 * 1000) => {
-  let last;
+const run = (s: Scheduler, minutes: number, idleMs = 0, step = 15 * 1000): TickStatus | undefined => {
+  let last: TickStatus | undefined;
   for (let t = 0; t < minutes * MIN; t += step) {
     clock += step;
     last = s.tick(step, idleMs);
@@ -75,7 +75,7 @@ for (const [name, fn] of Object.entries(tests)) {
     console.log(`ok    ${name}`);
   } catch (e) {
     failed++;
-    console.log(`FAIL  ${name}\n      ${e.message}`);
+    console.log(`FAIL  ${name}\n      ${(e as Error).message}`);
   }
 }
 process.exitCode = failed ? 1 : 0;

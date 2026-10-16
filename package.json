@@ -3,31 +3,38 @@
   "productName": "Gino",
   "version": "0.2.0",
   "description": "A desk stretch coach that lives in your tray. Gino the Gnocchi pops up every 20 minutes of screen time.",
-  "main": "main.js",
+  "main": "build/main.js",
   "private": true,
   "scripts": {
-    "start": "electron .",
-    "fast": "electron . --fast",
-    "test": "node test/scheduler.test.js && node test/placement.test.js",
-    "screens": "electron dev/screens.js",
-    "dist:win": "electron-builder --win portable nsis --publish never",
-    "dist:mac": "electron-builder --mac zip dmg --publish never"
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc -p .",
+    "start": "npm run build && electron .",
+    "fast": "npm run build && electron . --fast",
+    "test": "npm run build && node build/test/scheduler.test.js && node build/test/placement.test.js",
+    "screens": "npm run build && electron build/dev/screens.js",
+    "dist:win": "npm run build && electron-builder --win portable nsis --publish never",
+    "dist:mac": "npm run build && electron-builder --mac zip dmg --publish never"
   },
   "dependencies": {
     "@fontsource-variable/shantell-sans": "^5.3.0",
     "@fontsource/atkinson-hyperlegible": "^5.3.0"
   },
   "devDependencies": {
+    "@types/node": "^24.19.2",
     "electron": "^44.8.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
   },
   "build": {
     "appId": "com.gino.stretch",
     "productName": "Gino",
     "files": [
-      "main.js",
-      "preload.js",
-      "src/**",
+      "build/main.js",
+      "build/preload.js",
+      "build/card.js",
+      "src/card.html",
+      "src/card.css",
       "assets/**"
     ],
     "win": {

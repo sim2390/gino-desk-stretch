@@ -1,6 +1,7 @@
 // Run with: npm test
-const assert = require('assert');
-const { cardBounds } = require('../src/placement');
+import assert from 'node:assert';
+import { cardBounds } from '../src/placement';
+import type { CardPos } from '../src/types';
 
 // A laptop as the main screen, with a second monitor to its left (listed first, as Windows can).
 // Each has a 48 px taskbar along the bottom, outside its work area.
@@ -9,7 +10,7 @@ const left = { x: -2560, y: 0, width: 2560, height: 1392 };
 const mainScreen = { bounds: { x: 0, y: 0, width: 1920, height: 1080 }, workArea: main };
 const leftScreen = { bounds: { x: -2560, y: 0, width: 2560, height: 1440 }, workArea: left };
 const displays = [leftScreen, mainScreen];
-const place = (saved, height = 214) =>
+const place = (saved: CardPos | null, height = 214) =>
   cardBounds({ primary: main, displays, saved, width: 440, height, edge: 8 });
 
 const tests = {
@@ -49,7 +50,7 @@ for (const [name, fn] of Object.entries(tests)) {
     console.log(`ok    ${name}`);
   } catch (e) {
     failed++;
-    console.log(`FAIL  ${name}\n      ${e.message}`);
+    console.log(`FAIL  ${name}\n      ${(e as Error).message}`);
   }
 }
 process.exitCode = failed ? 1 : 0;

@@ -15,12 +15,12 @@
 </style>
 </head>
 <body>
-<!-- ?static freezes everything. Rep poses loop one rep of their exercise, with its cues. -->
+<!-- ?static freezes everything. Rep poses loop one rep of their exercise, with its cues.
+     Loads the compiled files from build/: run npm run build first. -->
 <div class="grid" id="grid"></div>
-<script>var module = { exports: {} };</script>
-<script src="../src/exercises.js"></script>
-<script>const EXERCISES = module.exports;</script>
-<script src="../src/gino.js"></script>
+<script src="../build/exercises.js"></script>
+<script>const EXERCISES = GinoExercises.EXERCISES;</script>
+<script src="../build/gino.js"></script>
 <script>
   const still = location.search.includes('static');
   if (still) document.body.classList.add('static');

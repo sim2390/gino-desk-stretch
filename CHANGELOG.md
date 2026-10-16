@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- Gino is now written in TypeScript, with strict type checking. The stretches list is typed, so a
+  misspelled field, pose or move is an error before Gino runs. `npm start` compiles first (about a
+  second); `npm run typecheck` checks the types, and the GitHub build runs it too.
+
 ## 0.2.0 (16 October 2026)
 
 ### New

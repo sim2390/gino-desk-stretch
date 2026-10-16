@@ -1,5 +1,7 @@
 // The stretches Gino rotates through. Edit freely: add, remove or reword.
-//   pose     one of the poses in src/gino.js
+// Each one is an Exercise (src/types.ts), so a misspelt field, pose or move name
+// is a type error: `npm run typecheck` reports it.
+//   pose     one of the poses in src/gino.ts (PoseName)
 //   dose     the short line under the instruction
 //   seconds  how long the guided timer runs (not needed with `rep`)
 //   reps     how many times to do it: shows "Rep 3 of 10" while the timer runs
@@ -8,7 +10,7 @@
 //              cue      what the card says during the phase, short: "Hold"
 //              seconds  how long the phase lasts
 //              move     what Gino does: a move his pose knows (see the pose in
-//                       src/gino.js and its rules in src/card.css), or 'hold' to stay put
+//                       src/gino.ts and its rules in src/card.css), or 'hold' to stay put
 //              hint     optional: a few words after "Rep 3 of 10", like "breathe out"
 //            A pause between reps is just another phase ("Relax").
 //   lead     seconds of "Get ready" before the timer starts (default 3, 0 for none)
@@ -18,7 +20,9 @@
 //   howTo    steps shown when you open "How to"
 // The walkaround comes up every third reminder (about once an hour at 20 min).
 
-module.exports = [
+import type { Exercise } from './types';
+
+export const EXERCISES: Exercise[] = [
   {
     id: 'sit-tall',
     name: 'Sit up straight',

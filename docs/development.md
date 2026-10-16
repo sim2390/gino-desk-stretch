@@ -20,35 +20,61 @@ npm install
 npm start
 ```
 
-Electron downloads its own binary (about 100 MB) the first time it starts, not during `npm install`.
+Gino is written in TypeScript. `npm start` compiles it into `build/` first, which takes about a
+second, and then starts Electron. Electron downloads its own binary (about 100 MB) the first time it
+starts, not during `npm install`.
 
 ## Scripts
 
 | Command | What it does |
 | --- | --- |
-| `npm start` | Runs Gino from the source. |
+| `npm start` | Builds, then runs Gino from the source. |
 | `npm run fast` | The same, with reminder minutes turned into seconds. |
-| `npm test` | Runs the scheduler and placement tests with plain Node. |
-| `npm run screens` | Renders every card state and writes `screens/index.html`. See [below](#the-screens-report). |
-| `npm run dist:win` | Builds the Windows installer and portable exe into `dist/`. |
-| `npm run dist:mac` | Builds the macOS `.dmg` and `.zip` into `dist/`. Only works on a Mac. |
+| `npm test` | Builds, then runs the scheduler and placement tests with plain Node. |
+| `npm run typecheck` | Checks the types with TypeScript. The build itself doesn't, so run this too. |
+| `npm run build` | Compiles the TypeScript into `build/`. The other scripts run it for you. |
+| `npm run screens` | Builds, then renders every card state and writes `screens/index.html`. See [below](#the-screens-report). |
+| `npm run dist:win` | Builds, then makes the Windows installer and portable exe in `dist/`. |
+| `npm run dist:mac` | Builds, then makes the macOS `.dmg` and `.zip` in `dist/`. Only works on a Mac. |
 
 ## How it fits together
 
 | File | What it does |
 | --- | --- |
-| [`main.js`](../main.js) | The main process: tray menu, timer ticks, the "is now a bad moment?" check, the card window, settings and stats |
-| [`src/scheduler.js`](../src/scheduler.js) | Counts active screen time and decides when a stretch is due. Pure logic, no Electron |
-| [`src/placement.js`](../src/placement.js) | Decides where the card window goes. Pure logic, no Electron |
-| [`preload.js`](../preload.js) | The only bridge between the card and the main process |
-| [`src/card.html`](../src/card.html), [`card.css`](../src/card.css), [`card.js`](../src/card.js) | The pop-up card: its states, the guided timer, and Gino's moves |
-| [`src/gino.js`](../src/gino.js) | Draws Gino as SVG, and moves him in time (`setMove`, `demo`) |
-| [`src/exercises.js`](../src/exercises.js) | The stretches |
+| [`main.ts`](../main.ts) | The main process: tray menu, timer ticks, the "is now a bad moment?" check, the card window, settings and stats |
+| [`src/scheduler.ts`](../src/scheduler.ts) | Counts active screen time and decides when a stretch is due. Pure logic, no Electron |
+| [`src/placement.ts`](../src/placement.ts) | Decides where the card window goes. Pure logic, no Electron |
+| [`preload.ts`](../preload.ts) | The only bridge between the card and the main process |
+| [`src/card.html`](../src/card.html), [`card.css`](../src/card.css), [`card.ts`](../src/card.ts) | The pop-up card: its states, the guided timer, and Gino's moves |
+| [`src/gino.ts`](../src/gino.ts) | Draws Gino as SVG, and moves him in time (`setMove`, `demo`) |
+| [`src/exercises.ts`](../src/exercises.ts) | The stretches |
+| [`src/types.ts`](../src/types.ts) | The shapes everything shares: an exercise, the card's messages, settings, stats |
+| [`src/ipc.ts`](../src/ipc.ts) | The names of the message channels between the main process and the card |
+| [`scripts/build.mjs`](../scripts/build.mjs) | The build: compiles each entry point with esbuild |
 | [`dev/`](../dev) | Tools that aren't shipped: the screens report, a pose sheet, a preview page |
+
+### The build
+
+[esbuild](https://esbuild.github.io) bundles each entry point into `build/`. It strips the types
+without checking them, which is why `npm run typecheck` exists (TypeScript, configured in
+[`tsconfig.json`](../tsconfig.json), with strict checking).
+
+| Entry point | Becomes | Runs in |
+| --- | --- | --- |
+| `main.ts` | `build/main.js` | The main process (`package.json` `main`) |
+| `preload.ts` | `build/preload.js` | The card window, before the page |
+| `src/card.ts` (with `gino.ts`) | `build/card.js` | The card window, as one classic script loaded by `src/card.html` |
+| `src/gino.ts` | `build/gino.js` | The dev pages, as the global `Gino` |
+| `src/exercises.ts` | `build/exercises.js` | The dev pages and the screens report, as the global `GinoExercises` |
+| `test/*.test.ts` | `build/test/*.test.js` | Plain Node |
+| `dev/screens.ts` | `build/dev/screens.js` | Electron |
+
+`build/` is generated and not committed: edit the `.ts` files. The installers contain
+`build/main.js`, `build/preload.js`, `build/card.js`, `src/card.html`, `src/card.css` and `assets/`.
 
 ### The main process
 
-Every 15 seconds (every second with `--fast`), `main.js` asks the operating system how long the
+Every 15 seconds (every second with `--fast`), `main.ts` asks the operating system how long the
 keyboard and mouse have been idle and passes that to the `Scheduler`.
 
 - **Due.** When the scheduler says a stretch is due, `maybeShow()` runs the quiet check, then shows
@@ -65,7 +91,7 @@ Windows it is `focusable: false`, so it never takes keyboard focus. It's shown w
 ### Where the card goes
 
 `placeCard()` passes the primary display, all displays, and the saved position to `cardBounds()` in
-`src/placement.js`.
+`src/placement.ts`.
 
 - **Saved position:** `settings.cardPos`, stored as `{ x, bottom }`, so a taller card grows upward.
 - **Default:** with no saved position, the card goes in the primary display's bottom-right corner.
@@ -79,7 +105,7 @@ Windows it is `focusable: false`, so it never takes keyboard focus. It's shown w
 
 ### The card
 
-`card.js` gets everything it knows from the `show` message. Its states, set as `data-state` on the
+`card.ts` gets everything it knows from the `show` message. Its states, set as `data-state` on the
 card:
 
 | State | Shown when |
@@ -97,22 +123,23 @@ Pressing Start calls `buildPlan()`, which turns the exercise into a list of time
    - one plain hold.
 
 Every 100 ms, `updateTimer()` finds the current step and updates the cue, the ring and the progress
-bar. On a step change it calls `Gino.setMove()`, which sets `data-move` on the plate plus
+bar. On a step change it calls `setMove()` from `gino.ts`, which sets `data-move` on the plate plus
 `--move-dur` and `--move-delay`. CSS transitions in `card.css` then take Gino to that move's pose in
-exactly the step's time. Before Start, `Gino.demo()` loops one rep at the same rhythm.
+exactly the step's time. Before Start, `demo()` loops one rep at the same rhythm.
 
 The timer rows have fixed heights, so the card's height doesn't change between steps. Each height
 change makes the main process re-place the window.
 
 ### Messages between the card and the main process
 
-Defined in `preload.js` as `window.ginoApi`.
+`preload.ts` puts `window.ginoApi` on the card window, typed as `GinoApi` in `src/types.ts`. The
+channel names are in `src/ipc.ts`.
 
 | Direction | Message | Meaning |
 | --- | --- | --- |
-| main → card | `show` | `{ mode, exercise, todayCount, snoozeMin, intervalMin, autoSnoozeMin }` |
+| main → card | `show` | A `ShowPayload`: `{ mode, exercise, todayCount, snoozeMin, intervalMin, autoSnoozeMin }` |
 | main → card | `hide` | Put the card away now (you walked off, or the screen locked) |
-| card → main | `card:action` | `start`, `done` (replies with `{ todayCount }`), `skip`, `stop`, `snooze`, `trynow`, `dismiss` |
+| card → main | `card:action` | A `CardAction`: `start`, `done` (replies with `{ todayCount }`), `skip`, `stop`, `snooze`, `trynow`, `dismiss` |
 | card → main | `card:resize` | The card's height changed |
 | card → main | `card:closed` | The close animation finished |
 
@@ -122,24 +149,26 @@ Defined in `preload.js` as `window.ginoApi`.
 - `%APPDATA%\Gino` on Windows;
 - `~/Library/Application Support/Gino` on macOS.
 
-They're read once at startup and merged over the defaults at the top of `main.js`. Daily counts are
-trimmed to the last 90 days.
+Their shapes are `Settings` and `Stats` in `src/types.ts`. They're read once at startup and merged
+over the defaults at the top of `main.ts`. Daily counts are trimmed to the last 90 days.
 
 ## Testing
 
 ```
+npm run typecheck
 npm test
 ```
 
-The tests are plain Node scripts with `assert`, with no framework:
-- `test/scheduler.test.js` covers active time, breaks, snooze, pause and interval changes;
-- `test/placement.test.js` covers the corner on the main screen, saved spots on either screen,
+The tests are TypeScript, compiled by the build and run with plain Node and `assert`, with no
+framework:
+- `test/scheduler.test.ts` covers active time, breaks, snooze, pause and interval changes;
+- `test/placement.test.ts` covers the corner on the main screen, saved spots on either screen,
   clamping, the taskbar, an unplugged screen, and height limits.
 
 Keep new logic that doesn't need Electron in its own module like these, so it can be tested the same
 way.
 
-For the card, `card.js` exposes dev hooks on `window.__card`:
+For the card, `card.ts` exposes dev hooks on `window.__card`:
 - the card actions: `show`, `start`, `finish`, `snooze`, `skip`, `toggleHowTo`;
 - `setElapsed(seconds)` puts the running timer that many seconds in, counting the lead-in;
 - `jumpTo(rep, part)` puts the timer in the middle of that part of that rep. `jumpTo(0)` is the middle
@@ -153,7 +182,7 @@ The app doesn't use them.
 npm run screens
 ```
 
-[`dev/screens.js`](../dev/screens.js) loads the real `src/card.html` in a hidden Electron window and
+[`dev/screens.ts`](../dev/screens.ts) loads the real `src/card.html` in a hidden Electron window and
 drives it through `window.__card`. It captures every state of every stretch at 2x, with animations
 frozen. It writes these to `screens/` (not committed):
 
@@ -161,11 +190,10 @@ frozen. It writes these to `screens/` (not committed):
 | --- | --- |
 | `index.html` | The report, for opening locally |
 | `page.html` + `files.json` | The same report as a page fragment, plus the list of files it needs, for publishing |
-| `live.html` | A live card that runs the real card code, embedded in the report so the animations can be watched and the timer started |
+| `live.html` | A live card that runs the real, built card code, embedded in the report so the animations can be watched and the timer started |
 | `NN-*.png` | The stills |
 
-Re-run it after changing the stretches or the card: the copies of the card files in `screens/` are
-snapshots.
+It builds first, so the report always matches the current source.
 
 ## Building the installers
 
@@ -182,7 +210,7 @@ file. The builds aren't code-signed, so Windows SmartScreen and macOS Gatekeeper
 
 macOS builds need a Mac. The easiest way to get one is the GitHub Actions workflow
 [`.github/workflows/build.yml`](../.github/workflows/build.yml):
-1. It builds Windows and macOS after running the tests.
+1. It builds Windows and macOS after type checking and running the tests.
 2. Run it from the repo's **Actions** tab ("Run workflow"), or push a tag like `v0.2.0`.
 3. The installers appear as downloadable artifacts on the run's page.
 
@@ -207,13 +235,15 @@ the `.dmg` from the workflow is for Apple silicon Macs (M1 and later). For Intel
 
 ## Gotchas
 
+- **Edit the `.ts` files, not `build/`.** `build/` is overwritten by every build.
+- **Type errors don't stop `npm start`.** esbuild only strips types; run `npm run typecheck` (CI does).
 - **"Cannot read properties of undefined (reading 'requestSingleInstanceLock')".** Electron is running
   as plain Node, because `ELECTRON_RUN_AS_NODE=1` is set in the environment. Processes launched from
   some editor tools inherit it, for example the VS Code extension host. Unset it before starting
   Electron.
 - **Only one Gino runs at a time.** Starting a second copy opens the running copy's menu and exits.
   To test the app next to your everyday Gino, give the test copy its own `userData` folder with
-  `app.setPath('userData', …)` before `main.js` loads.
+  `app.setPath('userData', …)` before `build/main.js` loads.
 - **Reduced motion.** Many Windows PCs have animation effects off, which turns on
   `prefers-reduced-motion`. Gino's exercise demonstrations deliberately ignore it; decorative motion
   respects it. See the note at the end of `card.css`.
