@@ -13,6 +13,15 @@
   Gino and drag the new one into Applications.
 - **Nothing else changes.** Same stretches, same card, same menu. A few small details differ, below.
 
+### Also new
+
+- On Windows, the card follows your text size (Settings › Accessibility › Text size): if you've made
+  text bigger, the card grows to match.
+
+### Fixed
+
+- The yellow time bar no longer pokes out past the card's rounded corners.
+
 ### Small differences
 
 - If you had dragged the card somewhere, it starts in its corner once after the update. Drag it back
