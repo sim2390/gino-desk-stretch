@@ -55,7 +55,7 @@ Every field:
 | `ready` | What to do during "Get ready". |
 | `sides` | `true` to switch sides halfway: Gino mirrors and the card says "Other side". Only for a plain timed stretch, not with `rep`. |
 | `walk` | `true` for the walkaround, which takes every third turn. Only the first stretch marked `walk` is used. |
-| `howTo` | The steps behind "How to". |
+| `howTo` | The steps behind "How to". Keep them short: with the steps open, the card can be at most 640 px tall (about twice the tallest built-in one), and the buttons sit below the list. |
 
 ## Guided reps
 

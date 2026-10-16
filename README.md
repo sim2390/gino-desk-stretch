@@ -25,8 +25,8 @@ through it.
   itself.
 - **Counts what you've done today.**
 - **Small and light.** Gino uses the web engine already built into your computer instead of bringing
-  his own, so the Windows download is about {{INSTALLER_MB}} MB and he needs about {{RAM_MB}} MB of
-  memory.
+  his own, so the Windows download is about 3 MB. While he waits, which is nearly all the time, he
+  uses about 6 MB of memory; only while a card is on screen does it go up, to about 110 MB.
 - **Keeps to itself.** Gino never connects to the internet. Your settings and counts stay on your
   computer.
 

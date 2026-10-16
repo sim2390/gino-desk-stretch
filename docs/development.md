@@ -278,7 +278,10 @@ Daily counts are trimmed to the 90 most recent days that have a count.
 On Windows, Gino writes **Start with Windows** himself, as a quoted
 `HKCU\Software\Microsoft\Windows\CurrentVersion\Run\Gino` entry. It respects the switch in Task
 Manager's **Startup apps** (the `StartupApproved` value), and clears that value too when the option is
-turned off. On macOS, **Open at login** is a LaunchAgent, made by Tauri's autostart plugin.
+turned off. The menu shows it ticked only when the entry starts *this* `gino.exe`, so a dev run
+(`npm start`) shows it unticked even when the installed Gino's entry is on; ticking it there points
+the real entry at the dev build. On macOS, **Open at login** is a LaunchAgent, made by Tauri's
+autostart plugin.
 
 ### The Windows installer
 
@@ -292,14 +295,18 @@ without WebView2, the bootstrapper fetches the runtime itself.
    closes the old `Gino.exe` with the Restart Manager, runs a copy of the uninstaller silently and
    waits. Once the old app is confirmed gone, it removes what's left of its folder, shortcuts that
    still point at it, and the old Chromium's caches in `%APPDATA%\Gino` (folders such as `Cache`,
-   `GPUCache` and `GrShaderCache`). `settings.json` and `stats.json` are never touched.
+   `GPUCache` and `GrShaderCache`). `settings.json` and `stats.json` are never touched. If the old
+   uninstall entry points anywhere else, it isn't run: a message says the old version couldn't be
+   removed automatically and can be uninstalled from Settings › Apps.
 2. **Start with Windows.** It deletes the old `com.gino.stretch` Run value and its Task Manager
-   switch. If the old one was on, and not switched off in Task Manager, the installer turns on the new
-   Gino's at the end of the install. An upgrade of the new Gino keeps it as it was.
-3. **Uninstalling** with **Delete the application data** ticked also removes `%APPDATA%\Gino`.
+   switch, even when the old app couldn't be removed (the new Gino would drop that entry anyway). If
+   the old one was on, and not switched off in Task Manager, the installer turns on the new Gino's at
+   the end of the install. An upgrade of the new Gino keeps it as it was.
+3. **Uninstalling** removes the new Gino's Run value and its Task Manager switch (except during an
+   upgrade). With **Delete the application data** ticked it also removes `%APPDATA%\Gino`.
 
-At start-up the app also deletes the old Run value (`platform::remove_legacy_login_item()`), unless
-`GINO_DATA_DIR` is set.
+At start-up the app also deletes the old Run value and its Task Manager switch
+(`platform::remove_legacy_login_item()`), unless `GINO_DATA_DIR` is set.
 
 ## Testing
 

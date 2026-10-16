@@ -189,8 +189,8 @@ fn dev_server(app: &AppHandle) -> Option<Url> {
     }
 }
 
-/// The tallest card a page may ask for, in CSS pixels. The tallest real one (the thoracic
-/// stretch with How to open) is about 280.
+/// The tallest card a page may ask for, in CSS pixels. The tallest real ones (a stretch with
+/// How to open) are about 300, so this leaves room for a custom stretch with longer steps.
 const MAX_H: f64 = 640.0;
 
 /// The height to make the window for a card that asks for `height` CSS pixels: the usual one

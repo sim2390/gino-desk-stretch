@@ -28,7 +28,6 @@
 Var GinoOldUninstaller   ; ...\Programs\gino\Uninstall Gino.exe
 Var GinoOldDir           ; ...\Programs\gino
 Var GinoStartWithWindows ; installer: 1 = switch "Start with Windows" on at the end
-Var GinoOldRefused       ; installer: 1 = the old uninstall entry wasn't trusted
 Var GinoUpgrading        ; uninstaller: 1 = the installer is replacing this version
 Var GinoRunWasOn         ; uninstaller: 1 = "Start with Windows" was on
 
@@ -39,10 +38,10 @@ Var GinoRunWasOn         ; uninstaller: 1 = "Start with Windows" was on
 !macro NSIS_HOOK_PREINSTALL
   StrCpy $GinoStartWithWindows 0
   !insertmacro GinoRemoveElectronVersion
-  ; An old Gino left in place keeps its own "Start with Windows".
-  ${If} $GinoOldRefused <> 1
-    !insertmacro GinoTakeOverElectronStartup
-  ${EndIf}
+  ; Even when the old Gino couldn't be removed: the new Gino drops the old
+  ; entry when it first starts (platform::remove_legacy_login_item), so this is
+  ; the only way "Start with Windows" carries over.
+  !insertmacro GinoTakeOverElectronStartup
 !macroend
 
 ; After the files, registry entries and shortcuts are in place. "Start with
@@ -92,7 +91,6 @@ Var GinoRunWasOn         ; uninstaller: 1 = "Start with Windows" was on
   ; Only ever run the uninstaller the Electron installer made, where it made
   ; it. Anyone can write that registry value; anything else it names is not
   ; ours to run. (Comparisons ignore case.)
-  StrCpy $GinoOldRefused 0
   ${If} $GinoOldDir != ""
     ${GetFileName} $GinoOldUninstaller $R1
     ${If} $GinoOldDir != "${GINO_ELECTRON_DIR}"
@@ -100,7 +98,6 @@ Var GinoRunWasOn         ; uninstaller: 1 = "Start with Windows" was on
       DetailPrint "Not removing the old Gino: its uninstall entry points somewhere unexpected ($GinoOldUninstaller)."
       MessageBox MB_ICONINFORMATION|MB_OK "The old version of Gino could not be removed automatically. You can uninstall it from Settings > Apps." /SD IDOK
       StrCpy $GinoOldDir ""
-      StrCpy $GinoOldRefused 1
     ${EndIf}
   ${EndIf}
 

@@ -2,9 +2,10 @@
 
 ## 0.3.0 (16 October 2026)
 
-- **Much smaller and lighter.** On Windows the download is now about {{INSTALLER_MB}} MB instead of
-  about 100 MB, and Gino takes about {{INSTALLED_MB}} MB once installed instead of about 370 MB. He
-  needs about {{RAM_MB}} MB of memory. He now uses the web engine your computer already has
+- **Much smaller and lighter.** On Windows the download is now about 3 MB instead of about 100 MB,
+  and Gino takes about 4 MB once installed instead of about 370 MB. While he waits he uses about
+  6 MB of memory, and about 110 MB only while a card is on screen (0.2 used about 136 MB all the
+  time). He now uses the web engine your computer already has
   (Microsoft Edge WebView2 on Windows, the system's own on macOS) instead of bringing his own.
 - **The old version is replaced for you.** On Windows, just run the new installer: it closes and
   removes Gino 0.2, clears out the old version's browser caches, and keeps your settings, your counts
