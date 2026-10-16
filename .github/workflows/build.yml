@@ -1,0 +1,39 @@
+# Builds Gino for Windows and macOS on GitHub's machines.
+# Run it from the Actions tab ("Run workflow"), or push a tag like v0.1.0.
+# The installers appear as downloadable artifacts on the run's page.
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm test
+      - name: Build Windows
+        if: runner.os == 'Windows'
+        run: npm run dist:win
+      - name: Build macOS (unsigned)
+        if: runner.os == 'macOS'
+        run: npm run dist:mac
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gino-${{ runner.os }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+          if-no-files-found: error

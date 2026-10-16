@@ -1,0 +1,345 @@
+/* Gino card. Palette: gnocchi with sage butter.
+   ink      #2E3327  olive ink for text and outlines
+   sage     #4F6E46  primary action, dose line
+   sageMist #E7EDE3  secondary buttons
+   leaf     #DDE5D7  plate rim, borders
+   butter   #E9B84A  timer progress, done accent
+   surface  #F7F9F4  card background (sage white) */
+
+:root {
+  --ink: #2E3327;
+  --muted: #646E5D;
+  --sage: #4F6E46;
+  --sage-dark: #42603A;
+  --sage-mist: #E7EDE3;
+  --leaf: #DDE5D7;
+  --butter: #E9B84A;
+  --surface: #F7F9F4;
+  --display: "Shantell Sans Variable", "Shantell Sans", "Ink Free", "Chalkboard SE", "Segoe Print", cursive;
+  --text: "Atkinson Hyperlegible", "Segoe UI Variable Text", "Segoe UI", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: transparent;
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: antialiased;
+}
+
+.stage {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: flex-end;
+  padding: 16px 18px 20px;
+}
+
+.card {
+  position: relative;
+  width: 404px;
+  display: grid;
+  grid-template-columns: 112px 1fr;
+  gap: 14px;
+  padding: 16px 18px 16px 12px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid #D3DCCD;
+  border-radius: 18px;
+  box-shadow:
+    0 1px 0 rgba(46, 51, 39, .05),
+    0 14px 30px -12px rgba(46, 51, 39, .42),
+    0 3px 8px -3px rgba(46, 51, 39, .16);
+  font: 13.5px/1.4 var(--text);
+}
+
+/* hidden until the first show, so stale placeholder text never flashes */
+.card.idle { opacity: 0; }
+.card.in { animation: card-in 380ms cubic-bezier(.2, .9, .3, 1.15) both; }
+.card.out { animation: card-out 200ms ease-in both; }
+
+@keyframes card-in {
+  from { opacity: 0; transform: translateY(28px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes card-out {
+  to { opacity: 0; transform: translateY(18px); }
+}
+
+/* The plate Gino stands on. His leaf pokes over the rim on purpose. */
+.plate {
+  position: relative;
+  align-self: center;
+  width: 108px;
+  height: 108px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, #FFFFFF 58%, #EEF2EA 100%);
+  border: 3px solid var(--leaf);
+  transition: border-color 300ms;
+}
+.plate svg {
+  position: absolute;
+  left: 4px;
+  bottom: 0;
+  width: 94px;
+  height: 110px;
+  transition: scale 260ms ease;
+}
+.card.in .plate svg { animation: pop 460ms 110ms cubic-bezier(.3, 1.6, .5, 1) both; }
+/* `scale` rather than `transform`, so the entrance animation can't override it */
+.plate.mirror svg { scale: -1 1; }
+.card[data-state="done"] .plate { border-color: var(--butter); }
+
+@keyframes pop {
+  from { transform: scale(.82) translateY(6px); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+
+.content {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 6px;
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+h1 {
+  margin: 0;
+  font: 600 21px/1.15 var(--display);
+  letter-spacing: -.005em;
+}
+
+.count {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.text { margin: 0; }
+
+.doseRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.dose {
+  margin: 0;
+  color: var(--sage);
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.howto {
+  margin: 4px 0 2px;
+  padding-left: 18px;
+  color: var(--ink);
+  font-size: 13px;
+}
+.howto li + li { margin-top: 3px; }
+.howto li::marker { color: var(--sage); font-weight: 700; }
+
+.timer {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin: 2px 0 2px;
+}
+.big {
+  min-width: 3.1em;
+  font: 600 34px/1 var(--display);
+  font-variant-numeric: tabular-nums;
+}
+.sub {
+  color: var(--sage);
+  font-weight: 700;
+}
+
+.note {
+  margin: 2px 0 0;
+  font-size: 14px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+button {
+  font: 700 13px/1 var(--text);
+  height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 10px;
+  cursor: pointer;
+  color: var(--ink);
+  background: transparent;
+}
+button:active { transform: translateY(1px); }
+button:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+
+.primary { background: var(--sage); color: #F7F9F4; }
+.primary:hover { background: var(--sage-dark); }
+.secondary { background: var(--sage-mist); }
+.secondary:hover { background: var(--leaf); }
+.quiet { color: var(--muted); padding: 0 8px; }
+.quiet:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+
+.link {
+  height: auto;
+  padding: 2px 0;
+  color: var(--sage);
+  font-size: 12.5px;
+  border-radius: 4px;
+}
+.link::after {
+  content: "";
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin: 0 2px 2px 6px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  transform: rotate(45deg);
+  transition: transform 160ms;
+}
+.link[aria-expanded="true"]::after { transform: rotate(-135deg) translate(-2px, -2px); }
+.link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+.progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 0 0 18px 18px;
+  opacity: 0;
+  transition: opacity 200ms;
+}
+.progress i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--butter);
+}
+.card[data-state="active"] .progress { opacity: 1; }
+
+[hidden] { display: none !important; }
+
+/* ---------- Gino's moves: each pose demonstrates its stretch ---------- */
+
+.gino * { transform-box: view-box; }
+.gino .eye,
+.gino .spark { transform-box: fill-box; transform-origin: center; }
+
+.gino .eye { animation: blink 4.6s infinite; }
+@keyframes blink {
+  0%, 92%, 100% { transform: none; }
+  95% { transform: scaleY(.1); }
+}
+
+.pose-idle .torso { animation: bob 2.8s ease-in-out infinite alternate; }
+@keyframes bob { to { transform: translateY(-2px); } }
+
+.pose-wave .arm-r { transform-origin: 88.5px 62px; animation: wave .9s ease-in-out infinite alternate; }
+@keyframes wave {
+  from { transform: rotate(-14deg); }
+  to { transform: rotate(16deg); }
+}
+
+.pose-chinTuck .body { animation: tuck 2.6s ease-in-out infinite; }
+.pose-chinTuck .chin { animation: chin 2.6s ease-in-out infinite; }
+.pose-chinTuck .arrow { animation: nudge 2.6s ease-in-out infinite; }
+@keyframes tuck {
+  0%, 100% { transform: none; }
+  35%, 65% { transform: translateX(-5px); }
+}
+@keyframes chin {
+  0%, 15%, 85%, 100% { opacity: 0; }
+  35%, 65% { opacity: 1; }
+}
+@keyframes nudge {
+  0%, 100% { transform: none; opacity: .55; }
+  35%, 65% { transform: translateX(-4px); opacity: 1; }
+}
+
+.pose-neckSide .torso { transform-origin: 60px 92px; animation: lean 4s ease-in-out infinite; }
+@keyframes lean {
+  0%, 100% { transform: rotate(-4deg); }
+  40%, 75% { transform: rotate(-15deg); }
+}
+
+.pose-thoracic .torso { animation: arch 2.6s ease-in-out infinite alternate; }
+.pose-thoracic .arm-l { transform-origin: 31.5px 64px; animation: elbow-l 2.6s ease-in-out infinite alternate; }
+.pose-thoracic .arm-r { transform-origin: 88.5px 64px; animation: elbow-r 2.6s ease-in-out infinite alternate; }
+@keyframes arch { to { transform: translateY(-4px); } }
+@keyframes elbow-l { to { transform: rotate(7deg); } }
+@keyframes elbow-r { to { transform: rotate(-7deg); } }
+
+.pose-shoulderRoll .torso { animation: shrug 2.2s ease-in-out infinite; }
+.pose-shoulderRoll .arrow { animation: fade 2.2s ease-in-out infinite; }
+@keyframes shrug {
+  0%, 100% { transform: none; }
+  30% { transform: translateY(-5px); }
+  60% { transform: translateY(-2px); }
+}
+@keyframes fade {
+  0%, 100% { opacity: .45; }
+  30% { opacity: 1; }
+}
+
+.pose-eyes .eyes { animation: gaze 3.4s ease-in-out infinite alternate; }
+.pose-eyes .eye { animation-duration: 6s; }
+@keyframes gaze { to { transform: translateX(1.6px); } }
+
+.pose-walk .leg-l { transform-origin: 60px 90px; animation: step .7s ease-in-out infinite alternate; }
+.pose-walk .leg-r { transform-origin: 60px 90px; animation: step .7s ease-in-out infinite alternate-reverse; }
+.pose-walk .arm-l { transform-origin: 31.5px 64px; animation: swing .7s ease-in-out infinite alternate-reverse; }
+.pose-walk .arm-r { transform-origin: 88.5px 64px; animation: swing .7s ease-in-out infinite alternate; }
+.pose-walk .torso { animation: bob .35s ease-in-out infinite alternate; }
+.pose-walk .prop { animation: fade .7s ease-in-out infinite; }
+@keyframes step {
+  from { transform: rotate(8deg); }
+  to { transform: rotate(-8deg); }
+}
+@keyframes swing {
+  from { transform: rotate(10deg); }
+  to { transform: rotate(-10deg); }
+}
+
+.pose-sitTall .torso { animation: grow 2.4s ease-in-out infinite alternate; }
+.pose-sitTall .arrow { animation: rise 2.4s ease-in-out infinite alternate; }
+@keyframes grow {
+  from { transform: translateY(3px); }
+  to { transform: translateY(-1px); }
+}
+@keyframes rise {
+  from { transform: translateY(5px); opacity: .5; }
+  to { transform: none; opacity: 1; }
+}
+
+.pose-celebrate .figure { animation: hop .45s ease-out 4 alternate; }
+.pose-celebrate .spark { animation: twinkle .9s ease-in-out infinite alternate; }
+.pose-celebrate .spark:nth-of-type(2) { animation-delay: .3s; }
+@keyframes hop { to { transform: translateY(-6px); } }
+@keyframes twinkle {
+  from { transform: scale(.6); }
+  to { transform: scale(1.1); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card.in, .card.out, .card.in .plate svg, .gino * { animation: none !important; }
+}

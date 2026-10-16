@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:">
+<title>Gino</title>
+<link rel="stylesheet" href="../node_modules/@fontsource-variable/shantell-sans/wght.css">
+<link rel="stylesheet" href="../node_modules/@fontsource/atkinson-hyperlegible/400.css">
+<link rel="stylesheet" href="../node_modules/@fontsource/atkinson-hyperlegible/700.css">
+<link rel="stylesheet" href="card.css">
+</head>
+<body>
+<main class="stage">
+  <article class="card idle" id="card" data-state="prompt" aria-live="polite">
+    <div class="plate" id="plate"></div>
+    <div class="content">
+      <header class="head">
+        <h1 id="title">Chin tucks</h1>
+        <span class="count" id="count"></span>
+      </header>
+
+      <div class="info" id="info">
+        <p class="text" id="text"></p>
+        <div class="doseRow">
+          <p class="dose" id="dose"></p>
+          <button class="link" id="howtoBtn" data-act="howto" aria-expanded="false" aria-controls="howto">How to</button>
+        </div>
+        <ol class="howto" id="howto" hidden></ol>
+      </div>
+
+      <div class="timer" id="timer" hidden>
+        <span class="big" id="big">0:45</span>
+        <span class="sub" id="sub"></span>
+      </div>
+
+      <p class="note" id="note" hidden></p>
+
+      <div class="actions" id="actPrompt">
+        <button class="primary" data-act="start">Start</button>
+        <button class="secondary" data-act="snooze" id="snoozeBtn">Snooze 10 min</button>
+        <button class="quiet" data-act="skip">Skip</button>
+      </div>
+      <div class="actions" id="actActive" hidden>
+        <button class="primary" data-act="done">Done</button>
+        <button class="secondary" data-act="stop">Stop</button>
+      </div>
+    </div>
+    <div class="progress" aria-hidden="true"><i id="bar"></i></div>
+  </article>
+</main>
+<script src="gino.js"></script>
+<script src="card.js"></script>
+</body>
+</html>

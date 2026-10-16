@@ -1,0 +1,51 @@
+{
+  "name": "gino",
+  "productName": "Gino",
+  "version": "0.1.0",
+  "description": "A desk stretch coach that lives in your tray. Gino the Gnocchi pops up every 20 minutes of screen time.",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "fast": "electron . --fast",
+    "test": "node test/scheduler.test.js",
+    "dist:win": "electron-builder --win portable nsis --publish never",
+    "dist:mac": "electron-builder --mac zip dmg --publish never"
+  },
+  "dependencies": {
+    "@fontsource-variable/shantell-sans": "^5.3.0",
+    "@fontsource/atkinson-hyperlegible": "^5.3.0"
+  },
+  "devDependencies": {
+    "electron": "latest",
+    "electron-builder": "latest"
+  },
+  "build": {
+    "appId": "com.gino.stretch",
+    "productName": "Gino",
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**",
+      "assets/**"
+    ],
+    "win": {
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    },
+    "mac": {
+      "icon": "assets/icon.png",
+      "category": "public.app-category.healthcare-fitness",
+      "target": [
+        "zip",
+        "dmg"
+      ],
+      "extendInfo": {
+        "LSUIElement": true
+      }
+    }
+  }
+}

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gino card states</title>
+<style>
+  body { margin: 0; padding: 0; background: #5B6B7A; font: 13px system-ui, sans-serif; }
+  .grid { display: grid; grid-template-columns: repeat(3, 440px); }
+  iframe { width: 440px; height: 300px; border: 0; display: block; }
+</style>
+</head>
+<body>
+<!-- Open in a browser started with --disable-web-security (file:// frames are cross-origin otherwise). -->
+<div class="grid" id="grid"></div>
+<script>
+  const ex = {
+    chin: { id: 'chin-tucks', name: 'Chin tucks', pose: 'chinTuck', text: 'Slide your head straight back, like making a double chin.', dose: '10 slow reps', seconds: 45, reps: 10, howTo: ['Sit tall and look straight ahead.', 'Glide your chin straight back, not down. Hold for 2 seconds.', 'Relax and repeat. You should feel it at the base of your skull.'] },
+    neck: { id: 'neck-side', name: 'Neck side stretch', pose: 'neckSide', text: 'Ear toward shoulder. Keep the other shoulder down.', dose: '20 seconds each side', seconds: 40, sides: true, howTo: ['Sit tall and tip your ear toward your shoulder.', 'Rest that hand on your head for a gentle extra pull. No yanking.', 'Switch sides when Gino does.'] },
+    thor: { id: 'thoracic', name: 'Thoracic extension', pose: 'thoracic', text: 'Hands behind your head, arch back over your chair.', dose: '10 reps', seconds: 40, reps: 10, howTo: ['a', 'b'] },
+    walk: { id: 'walkaround', name: 'Walkaround', pose: 'walk', text: 'Get up and walk. Refill your water while you are at it.', dose: '2 minutes', seconds: 120, walk: true, howTo: ['a'] },
+    welcome: { id: 'welcome', name: "Hi, I'm Gino", pose: 'wave', text: "Every 20 minutes of screen time I'll pop up with a short stretch. I live in the tray by the clock. If you can't see me, I'm under the ^ arrow: drag me out.", dose: '', howTo: [] },
+  };
+  const base = { todayCount: 2, snoozeMin: 10, intervalMin: 20, autoSnoozeMin: 0 };
+  const scenes = [
+    ['prompt', (c) => c.show({ ...base, exercise: ex.chin })],
+    ['howto', (c) => { c.show({ ...base, exercise: ex.neck }); c.toggleHowTo(); }],
+    ['active reps', (c) => { c.show({ ...base, exercise: ex.thor }); c.start(); c.setElapsed(13); }],
+    ['active sides', (c) => { c.show({ ...base, exercise: ex.neck }); c.start(); c.setElapsed(26); }],
+    ['active walk', (c) => { c.show({ ...base, todayCount: 0, exercise: ex.walk }); c.start(); c.setElapsed(40); }],
+    ['done', (c) => { c.show({ ...base, exercise: ex.chin }); c.finish(); }],
+    ['snoozed', (c) => { c.show({ ...base, exercise: ex.chin }); c.snooze(false); }],
+    ['welcome', (c) => c.show({ ...base, mode: 'welcome', exercise: ex.welcome })],
+    ['first today', (c) => c.show({ ...base, todayCount: 0, exercise: ex.walk })],
+  ];
+  const grid = document.getElementById('grid');
+  for (const [name, run] of scenes) {
+    const f = document.createElement('iframe');
+    f.title = name;
+    f.src = '../src/card.html';
+    f.onload = () => {
+      // ?still freezes all motion so screenshots show the settled layout
+      if (location.search.includes('still')) {
+        const s = f.contentDocument.createElement('style');
+        s.textContent = '*, *::before, *::after { animation: none !important; transition: none !important; }';
+        f.contentDocument.head.appendChild(s);
+      }
+      run(f.contentWindow.__card);
+    };
+    grid.appendChild(f);
+  }
+</script>
+</body>
+</html>
