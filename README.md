@@ -32,19 +32,20 @@ Gino isn't code-signed yet, so your computer warns you the first time you open i
 
 ### Windows 10 and 11
 
-1. Download **Gino Setup 0.2.0.exe** from the
-   [Releases page](https://github.com/sim2390/gino-desk-stretch/releases).
+1. Download **Gino-Setup-0.2.0.exe** from the
+   [latest release](https://github.com/sim2390/gino-desk-stretch/releases/latest).
 2. Run it. If Windows says it protected your PC, click **More info**, then **Run anyway**.
 3. Gino lives in the tray by the clock. Windows 11 hides new tray icons under the **^** arrow: drag
    him out onto the taskbar so you can always see him.
 4. Click Gino and tick **Start with Windows**.
 
-Rather not install anything? Download **Gino 0.2.0.exe** instead. It runs as it is.
+Rather not install anything? Download **Gino-0.2.0-portable.exe** instead. It runs as it is.
 
 ### macOS (Apple silicon: M1 and later)
 
-1. Download the `.dmg` from the [Releases page](https://github.com/sim2390/gino-desk-stretch/releases)
-   and drag Gino into Applications.
+1. Download **Gino-0.2.0-arm64.dmg** from the
+   [latest release](https://github.com/sim2390/gino-desk-stretch/releases/latest) and drag Gino into
+   Applications.
 2. The first time, right-click Gino in Applications and choose **Open**. If macOS says the app is
    damaged, run `xattr -cr /Applications/Gino.app` in Terminal once, then open it again.
 3. Gino lives in the menu bar. Click him and tick **Open at login**.

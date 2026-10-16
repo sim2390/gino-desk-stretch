@@ -205,8 +205,11 @@ npm run dist:win
 ```
 
 This builds, in `dist/`:
-- `Gino Setup <version>.exe`, a one-click installer for the current user;
-- `Gino <version>.exe`, which runs without installing.
+- `Gino-Setup-<version>.exe`, a one-click installer for the current user;
+- `Gino-<version>-portable.exe`, which runs without installing.
+
+The file names avoid spaces because GitHub turns spaces in release downloads into dots. The Mac build
+makes `Gino-<version>-arm64.dmg` and a `.zip`.
 
 The version comes from `package.json`, and electron-builder's settings are under `build` in the same
 file. The builds aren't code-signed, so Windows SmartScreen and macOS Gatekeeper warn on first open.
@@ -226,11 +229,13 @@ macOS builds need a Mac. The easiest way to get one is the GitHub Actions workfl
    git push origin main --tags
    ```
    The tag starts the build workflow.
-3. Create the release and attach the installers. Take the Windows files from `dist/` or from the
-   workflow's artifacts, and the macOS `.dmg` from the workflow's `gino-macOS` artifact:
+3. When the workflow finishes, download its artifacts and create the release with the installers:
    ```
-   gh release create v0.2.0 "dist/Gino Setup 0.2.0.exe" "dist/Gino 0.2.0.exe" <path to the .dmg> --title "Gino Desk Stretch 0.2.0" --notes-file notes.md
+   gh run download <run id> --dir release
+   gh release create v0.2.0 release/gino-Windows/Gino-Setup-0.2.0.exe release/gino-Windows/Gino-0.2.0-portable.exe release/gino-macOS/Gino-0.2.0-arm64.dmg --title "Gino Desk Stretch 0.2.0" --notes-file notes.md
    ```
+   Write the notes for people downloading Gino: what's new, which file to pick, and the first-open
+   warnings.
 
 GitHub's macOS runners are Apple silicon, and electron-builder builds for the machine it runs on, so
 the `.dmg` from the workflow is for Apple silicon Macs (M1 and later). For Intel Macs, add `--x64`
