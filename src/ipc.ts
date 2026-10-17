@@ -1,13 +1,18 @@
-// The message channels between the main process and the card window (see preload.ts).
+// The names the card page and the Rust side use to talk (see bridge.ts and src-tauri/src/card.rs).
 export const IPC = {
-  /** main → card: show this (a ShowPayload) */
+  // Rust → card: events
+
+  /** show this (a ShowPayload). There's no hide: Rust closes the card's window instead. */
   show: 'show',
-  /** main → card: put the card away now */
-  hide: 'hide',
-  /** card → main: a CardAction; answers with an ActionReply */
-  action: 'card:action',
-  /** card → main: the window needs to be this tall */
-  resize: 'card:resize',
-  /** card → main: the close animation finished */
-  closed: 'card:closed',
+
+  // card → Rust: commands
+
+  /** the page is listening: send the card that's waiting, if any */
+  ready: 'card_ready',
+  /** a CardAction, as { name, data }; answers with an ActionReply */
+  action: 'card_action',
+  /** the window needs to be this tall, as { height } (CSS px, shadow room included) */
+  resize: 'card_resize',
+  /** the close animation finished */
+  closed: 'card_closed',
 } as const;

@@ -27,7 +27,7 @@ const BUILD = path.join(ROOT, 'build');
 const CARD_HTML = path.join(SRC, 'card.html');
 
 const ZOOM = 2; // the PNGs are 2x the card's CSS size
-const VIEW_W = 440; // WIN_W in main.ts: the real card window is this wide
+const VIEW_W = 440; // the real card window is this wide (src-tauri/src/card.rs)
 let viewH = 640; // CSS px. Far taller than any card; grows if a card ever gets clipped.
 
 const TITLE = 'Gino Card Screens';
@@ -41,29 +41,41 @@ const LIVE_FILES: Record<string, string> = {
   'exercises.js': path.join(BUILD, 'exercises.js'),
 };
 
-// ---------- facts read from main.ts, so the report follows the app ----------
+// ---------- facts read from the app's Rust sources, so the report follows the app ----------
 
-const MAIN_SRC = fs.readFileSync(path.join(ROOT, 'main.ts'), 'utf8');
-// The body of `const NAME = { ... };`, also with a type after NAME or `as const` after the }.
-const objectBody = (name: string) =>
-  (MAIN_SRC.match(new RegExp(`const ${name}(?::[^=]*)? = \\{([\\s\\S]*?)\\n\\}[^;\\n]*;`)) || [])[1] || '';
+const RUST = path.join(ROOT, 'src-tauri', 'src');
+const rustFiles = (dir: string): string[] =>
+  fs.readdirSync(dir, { withFileTypes: true }).flatMap((d) => {
+    const p = path.join(dir, d.name);
+    return d.isDirectory() ? rustFiles(p) : d.name.endsWith('.rs') ? [p] : [];
+  });
+const readRust = (file: string) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
+const RUST_SRC = fs.existsSync(RUST) ? rustFiles(RUST).map(readRust).join('\n') : ''; // all of it
+const TRAY_SRC = readRust(path.join(RUST, 'tray.rs'));
+const QUIET_SRC = readRust(path.join(RUST, 'platform', 'windows.rs'));
+const camel = (s: string) => s.replace(/_([a-z])/g, (_, c: string) => c.toUpperCase());
 
+// `impl Default for Settings` in store.rs: interval_min: 20, and so on.
 type NumberSettings = Pick<Settings, 'intervalMin' | 'snoozeMin' | 'idleResetMin' | 'autoSnoozeMin'>;
 const S: NumberSettings & Record<string, number> = { intervalMin: 20, snoozeMin: 10, idleResetMin: 5, autoSnoozeMin: 4 };
-for (const [, k, v] of objectBody('DEFAULT_SETTINGS').matchAll(/^\s*(\w+):\s*(\d+)/gm)) S[k] = Number(v);
+const settingsDefault = (RUST_SRC.match(/impl Default for Settings \{([\s\S]*?)\n\}/) || [])[1] || '';
+for (const [, k, v] of settingsDefault.matchAll(/^\s*(\w+):\s*(\d+)/gm)) S[camel(k)] = Number(v);
 
-const BUSY = new Map<string, number[]>(); // reason -> Windows notification states (BUSY_STATES)
-for (const [, n, reason] of objectBody('BUSY_STATES').matchAll(/(\d+):\s*'([^']*)'/g)) {
-  BUSY.set(reason, [...(BUSY.get(reason) || []), Number(n)]);
+const CALL_REASON = (RUST_SRC.match(/"(you [^"]*\bcall)"/) || [])[1] || 'you seem to be on a call';
+// The other "Holding off" reasons, with the Windows notification states behind them, from the
+// quiet check: `3 => Some("full-screen app")` or `(3, "full-screen app")`. Without numbers
+// there, the reasons BUSY_WHEN knows.
+const BUSY = new Map<string, number[]>(); // reason -> states
+for (const [, n, reason] of QUIET_SRC.matchAll(/\b(\d+)\s*(?:=>\s*(?:Some\()?|,\s*)"([^"]+)"/g)) {
+  if (reason !== CALL_REASON) BUSY.set(reason, [...(BUSY.get(reason) || []), Number(n)]);
 }
-const CALL_REASON = (MAIN_SRC.match(/r\.mic\)[^\n]*reason:\s*'([^']*)'/) || [])[1] || 'you seem to be on a call';
-const INTERVALS = ((MAIN_SRC.match(/label: 'Remind me every',\s*submenu: \[([\d,\s]+)\]/) || [])[1] || '15, 20, 30, 45, 60')
+const INTERVALS = ((TRAY_SRC.match(/\[\s*(\d+(?:\s*,\s*\d+){2,})\s*,?\s*\]/) || [])[1] || '15, 20, 30, 45, 60')
   .split(',')
   .map(Number);
-const TOMORROW_AT = Number((MAIN_SRC.match(/setHours\((\d+),/) || [])[1] || 6);
-const HAS_RESET_ITEM = MAIN_SRC.includes('Reset card position');
+const TOMORROW_AT = Number((RUST_SRC.match(/tomorrow[\s\S]{0,400}?(?:hms_opt|with_hour)\((\d+)/i) || [])[1] || 6);
+const HAS_RESET_ITEM = RUST_SRC.includes('Reset card position');
 
-// The welcome card is built by welcomeCard() in main.ts from the running app's settings,
+// The welcome card is built by the app from its settings (src-tauri/src),
 // so it is copied here: the Windows wording, with the default interval.
 const WELCOME: CardContent = {
   id: 'welcome',
@@ -74,7 +86,7 @@ const WELCOME: CardContent = {
   howTo: [],
 };
 
-// What main.ts sends with every card. autoSnoozeMin 0 so no card snoozes itself mid-capture.
+// What the app sends with every card. autoSnoozeMin 0 so no card snoozes itself mid-capture.
 const BASE = { todayCount: 2, snoozeMin: S.snoozeMin, intervalMin: S.intervalMin, autoSnoozeMin: 0 };
 // A scene's card. The stretches leave mode out: the card shows anything but 'welcome' as a stretch.
 type Payload = Omit<ShowPayload, 'mode'> & { mode?: CardMode };
@@ -87,7 +99,7 @@ function workSeconds(ex: CardContent): number {
   if (phases.length) return Math.max(1, Math.round(ex.reps || 1)) * phases.reduce((a, p) => a + Number(p.seconds), 0);
   return Math.max(5, ex.seconds || (ex.sides ? 40 : 30));
 }
-// main.ts shows the stretches in turn, starting with the first that isn't the walkaround.
+// The app shows the stretches in turn, starting with the first that isn't the walkaround.
 const FIRST = EXERCISES.find((e) => !e.walk) || EXERCISES[0];
 
 // ---------- Electron setup: own name and data folder, exact 2x pixels ----------
@@ -493,15 +505,15 @@ async function run() {
   if (warnings.length) console.log(`${warnings.length} warning(s), see above.`);
 }
 
-// The menu mock copies labels from buildMenu() in main.ts. Say so if they drift apart.
+// The menu mock copies labels from the app's tray menu and status line. Say so if they drift apart.
 function checkMenuLabels() {
   const labels = [
     'Stretch now', 'Pause', 'Resume', 'For 30 minutes', 'For 1 hour', 'For 2 hours', 'Until tomorrow',
     'Remind me every', 'Hold off during calls and full-screen apps', 'Start with Windows', 'Quit Gino',
     'No stretches yet today', 'Done today: ', 'Stretch on screen', 'Holding off: ', 'Paused until ', 'Next stretch in ',
   ];
-  for (const l of labels) if (!MAIN_SRC.includes(l)) warn(`menu mock label "${l}" is not in main.ts any more`);
-  if (!HAS_RESET_ITEM) console.log('  (note) "Reset card position" is not in main.ts yet; the mock shows it as new');
+  for (const l of labels) if (!RUST_SRC.includes(l)) warn(`menu mock label "${l}" is not in src-tauri/src any more`);
+  if (!HAS_RESET_ITEM) console.log('  (note) "Reset card position" is not in src-tauri/src yet; the mock shows it as new');
 }
 
 // ---------- live.html: the real card in a frame ----------
@@ -510,8 +522,8 @@ const ENTITIES: Record<string, string> = { '&': '&amp;', '<': '&lt;', '>': '&gt;
 const esc = (s: string | number) => String(s).replace(/[&<>"']/g, (ch) => ENTITIES[ch]);
 const scriptJson = (v: unknown) => JSON.stringify(v).replace(/</g, '\\u003c');
 
-// Made from src/card.html so it stays in step with the app. Stands in for preload.ts and
-// main.ts: the card shows the card named in the hash (live.html#chin-tucks), and when it
+// Made from src/card.html so it stays in step with the app. Stands in for bridge.ts and
+// the app: the card shows the card named in the hash (live.html#chin-tucks), and when it
 // closes, it comes back, so each frame loops forever.
 function liveHtml(): string {
   let html = fs.readFileSync(CARD_HTML, 'utf8');
@@ -529,7 +541,7 @@ function liveHtml(): string {
 
   const shim = `<script src="exercises.js"></script>
 <script>
-// Stands in for preload.ts: exercises.js has put the stretches on window.GinoExercises.
+// Stands in for bridge.ts: exercises.js has put the stretches on window.GinoExercises.
 (() => {
   const EXERCISES = window.GinoExercises.EXERCISES;
   const WELCOME = ${scriptJson(WELCOME)};
@@ -546,7 +558,6 @@ function liveHtml(): string {
   window.ginoLive = { show: (key) => onShow && onShow(payload(key || home)) };
   window.ginoApi = {
     onShow: (cb) => { onShow = cb; },
-    onHide: () => {},
     action: (name) => {
       if (name === 'done') return Promise.resolve({ todayCount: ++count });
       if (name === 'trynow') next = FIRST;
@@ -840,7 +851,7 @@ figcaption b { color: var(--fg); }
 
 .mock-label { display: inline-block; margin: 0 0 14px; padding: 6px 12px; font-size: 13.5px; background: var(--chip); border-left: 3px solid var(--accent); border-radius: 4px; }
 
-/* Windows 11 tray menu, drawn to match buildMenu() in main.ts */
+/* Windows 11 tray menu, drawn to match the app's (src-tauri/src/tray.rs) */
 figure.tray-fig { width: max-content; }
 .desk.tray { position: relative; padding: 18px 16px 58px; overflow: hidden; }
 .menus { display: flex; align-items: flex-start; justify-content: flex-end; margin-right: 86px; }
@@ -992,7 +1003,7 @@ ${figs}
     ['Stretch on screen', 'A card is up.'],
     ['Paused until 15:30', `Paused from the menu. “Until tomorrow” shows <i>Paused until tomorrow ${String(TOMORROW_AT).padStart(2, '0')}:00</i>.`],
     [`Holding off: ${CALL_REASON}`, 'A stretch is due, but an app has the microphone open.'],
-    ...[...BUSY].map(([reason, states]) => [
+    ...(BUSY.size ? [...BUSY] : Object.keys(BUSY_WHEN).map((r): [string, number[]] => [r, []])).map(([reason, states]) => [
       `Holding off: ${reason}`,
       `A stretch is due, but ${esc(BUSY_WHEN[reason] || `Windows reports state ${states.join(' or ')}`)}.`,
     ]),
@@ -1078,7 +1089,7 @@ ${endings}
 
 <section class="part" id="tray">
   <h2>Tray menu</h2>
-  <p class="mock-label">Drawn in HTML to match <code>buildMenu()</code> in main.ts. Not a screenshot: Windows draws the real menu, in its own light or dark style.</p>
+  <p class="mock-label">Drawn in HTML to match the menu in <code>src-tauri/src/tray.rs</code>. Not a screenshot: Windows draws the real menu, in its own light or dark style.</p>
   <p class="lead">Click or right-click Gino's icon by the clock. Windows 11 may hide new tray icons under the <b>^</b> arrow.</p>
   <div class="shots">
 ${trayFigs}
@@ -1102,7 +1113,7 @@ ${trayFigs}
 ${tips}
     </tbody>
   </table>
-  <p class="fine">Checked in this order: paused, card on screen, holding off, countdown. Times follow your clock's format. With <code>npm run fast</code> it says sec instead of min. Source: <code>statusLine()</code> and <code>BUSY_STATES</code> in main.ts.</p>
+  <p class="fine">Checked in this order: paused, card on screen, holding off, countdown. Times follow your clock's format. With <code>npm run fast</code> it says sec instead of min. Source: the status line and the quiet check in <code>src-tauri/src</code>.</p>
 </section>
 
 </main>

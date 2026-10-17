@@ -1,0 +1,15 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "What a card window may do, and nothing more: listen for its card, call Gino's four card commands, and move itself when dragged",
+  "windows": ["card-*"],
+  "permissions": [
+    "core:event:allow-listen",
+    "core:event:allow-unlisten",
+    "core:window:allow-start-dragging",
+    "allow-card-ready",
+    "allow-card-action",
+    "allow-card-resize",
+    "allow-card-closed"
+  ]
+}

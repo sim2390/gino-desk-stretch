@@ -55,8 +55,7 @@ html, body {
     0 14px 30px -12px rgba(46, 51, 39, .42),
     0 3px 8px -3px rgba(46, 51, 39, .16);
   font: 13.5px/1.4 var(--text);
-  /* Drag the card anywhere by its body; main.js remembers the spot. Buttons opt out below. */
-  -webkit-app-region: drag;
+  /* Dragging the card by its body is done in bridge.ts (WebView2 ignores -webkit-app-region). */
 }
 
 /* hidden until the first show, so stale placeholder text never flashes */
@@ -154,7 +153,7 @@ h1 {
 
 /* The running timer: the cue (or the clock, for a plain hold) with a dial that
    drains over the current phase, then "Rep 3 of 10". Every line has a fixed
-   height so the card never changes size between phases: main.js would move
+   height so the card never changes size between phases: the app would move
    the window. */
 .timer {
   display: grid;
@@ -243,7 +242,6 @@ button {
   cursor: pointer;
   color: var(--ink);
   background: transparent;
-  -webkit-app-region: no-drag;
 }
 button:active { transform: translateY(1px); }
 button:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
@@ -276,20 +274,23 @@ button:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
 .link[aria-expanded="true"]::after { transform: rotate(-135deg) translate(-2px, -2px); }
 .link:hover { text-decoration: underline; text-underline-offset: 3px; }
 
+/* The time bar along the bottom edge. Its clipping layer covers the whole card, so the bar
+   follows the card's rounded corners: a 5 px-tall box can't hold an 18 px corner, so the
+   browser shrinks it and the bar's ends would poke out past the card. */
 .progress {
   position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: 5px;
+  inset: 0;
   overflow: hidden;
-  border-radius: 0 0 18px 18px;
+  border-radius: 17px; /* the card's 18px, inside its 1px border */
+  pointer-events: none;
   opacity: 0;
   transition: opacity 200ms;
 }
 .progress i {
-  display: block;
-  height: 100%;
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 5px;
   width: 0;
   background: var(--butter);
 }

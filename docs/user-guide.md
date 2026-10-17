@@ -35,11 +35,11 @@ of them (you can change this), a stretch card pops up.
 These count as a break, and the count starts over:
 
 - 5 minutes without touching the keyboard or mouse
-- locking the screen
+- locking the screen (on a Mac, once it has been locked for 5 minutes)
 - the computer going to sleep
 
-If a card is on screen when you step away for 5 minutes or lock the screen, Gino puts it away and
-starts the count over. You won't come back to a stale card.
+If a card is on screen when you take a break like this, Gino puts it away and starts the count over.
+You won't come back to a stale card.
 
 ## The card
 
@@ -56,7 +56,7 @@ today.
 | **Start** | Runs the guided timer. |
 | **Snooze 10 min** | Hides the card and asks again in 10 minutes. |
 | **Skip** | No stretch this time. The next one comes after a full interval. |
-| **How to** | Opens the steps. While they're open, the card won't snooze itself. |
+| **How to** | Opens the steps. Once you've opened them, the card won't snooze itself. |
 
 <img src="images/how-to.png" width="440" alt="The card with How to open, showing three numbered steps">
 
@@ -161,8 +161,8 @@ due waits while:
 The tray tooltip says why Gino is waiting, for example *Holding off: you seem to be on a call*. He
 checks again once a minute and pops up as soon as the moment has passed. To find out whether an app
 has the microphone open, Gino reads the record Windows keeps of which apps are using the microphone
-(the one behind **Settings › Privacy & security › Microphone**). He never listens to or records
-anything.
+(the one behind **Settings › Privacy & security › Microphone**). He asks Windows directly, so
+nothing else starts up to check. He never listens to or records anything.
 
 ## Your data
 
@@ -171,23 +171,37 @@ Gino keeps two small files:
 | File | What's in it |
 | --- | --- |
 | `settings.json` | Your interval, the hold-off setting, where you dragged the card, and whether you've seen the welcome |
-| `stats.json` | How many stretches you did each day (kept for about three months), and where you are in the rotation |
+| `stats.json` | How many stretches you did each day (kept for the 90 most recent days you stretched), and where you are in the rotation |
 
 They live in `%APPDATA%\Gino` on Windows and `~/Library/Application Support/Gino` on macOS. Delete
 them to start fresh: Gino says hello again next time. Gino never connects to the internet.
+
+On Windows, WebView2, the engine that draws the card, keeps its own working files in
+`%LOCALAPPDATA%\com.gino.stretch\EBWebView` (about 10 MB): caches for drawing the card, a small
+history of the card page, WebView2's own settings and IDs, and a folder for crash reports. It's safe
+to delete while Gino is closed.
+
+Uninstalling Gino on Windows keeps your settings and counts, unless you tick **Delete the application
+data**.
 
 ## Troubleshooting
 
 **I can't find Gino.**
 On Windows 11, click the **^** arrow next to the clock. Drag Gino from there onto the taskbar. On a
-Mac, look in the menu bar at the top right.
+Mac, look in the menu bar at the top right. Or start Gino again, from the Start menu on Windows or
+from Applications on a Mac: his welcome card pops up and says where he lives.
 
 **Windows says "Windows protected your PC".**
 Gino isn't code-signed yet. Click **More info**, then **Run anyway**.
 
-**macOS says Gino "is damaged" or can't be opened.**
-Right-click Gino in Applications and choose **Open**. If it still says it's damaged, run
-`xattr -cr /Applications/Gino.app` in Terminal once.
+**The installer says the old version of Gino could not be removed.**
+Open **Settings › Apps › Installed apps**, find the older Gino and uninstall it. Your settings and
+counts stay.
+
+**macOS won't open Gino, or says it "is damaged".**
+Gino isn't signed by Apple yet. Open **System Settings › Privacy & Security**, scroll down and click
+**Open Anyway** next to Gino. If macOS says Gino is damaged, run `xattr -cr /Applications/Gino.app`
+in Terminal once, then open it again.
 
 **Gino hasn't popped up for a long time.**
 Hover over his icon to see why. He might be paused, or holding off because an app has the microphone
@@ -202,5 +216,11 @@ puts it back in the main screen's corner.
 His demonstrations always play. If the card itself doesn't slide in and Gino doesn't blink, your
 computer is set to reduce motion; that's on purpose.
 
-**Starting Gino again just opens his menu.**
-Only one Gino runs at a time. Starting him again opens the menu of the one that's already running.
+**Starting Gino again just shows his welcome card.**
+Only one Gino runs at a time. Starting him again, on Windows or on a Mac, shows the welcome card of
+the one that's already running, which says where to find him. If a card is already up, nothing
+changes.
+
+**I updated Gino and the card is back in its corner.**
+Gino forgets where you dragged the card once, when you update from 0.2. Drag it back and he
+remembers it again.

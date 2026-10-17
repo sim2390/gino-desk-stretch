@@ -1,4 +1,4 @@
-// The shapes shared by the main process, the card and the stretches list.
+// The shapes shared by the card, the stretches list and the app's Rust side.
 
 /** Gino's poses, drawn in src/gino.ts. */
 export type PoseName =
@@ -58,7 +58,7 @@ export type CardContent = Pick<Exercise, 'id' | 'name' | 'pose' | 'text' | 'dose
 
 export type CardMode = 'stretch' | 'welcome';
 
-/** Main process → card: what to show. */
+/** Rust → card: what to show. */
 export interface ShowPayload {
   mode: CardMode;
   exercise: CardContent;
@@ -68,28 +68,35 @@ export interface ShowPayload {
   autoSnoozeMin: number;
 }
 
-/** Card → main process: what the person did. */
+/** Card → Rust: what the person did. */
 export type CardAction = 'start' | 'done' | 'skip' | 'stop' | 'snooze' | 'trynow' | 'dismiss';
 
-/** The main process's answer to an action ('done' sends back today's count). */
+/** Rust's answer to an action ('done' sends back today's count). */
 export interface ActionReply {
   todayCount?: number;
 }
 
-/** The bridge preload.ts puts on the card window as window.ginoApi. */
+/** What bridge.ts puts on the card window as window.ginoApi, inside the app. */
 export interface GinoApi {
   onShow(cb: (payload: ShowPayload) => void): void;
-  onHide(cb: () => void): void;
   action(name: CardAction, data?: Record<string, unknown>): Promise<ActionReply>;
   resize(height: number): void;
   closed(): void;
 }
 
-/** Where you last dragged the card: its left edge and its bottom edge. */
+/**
+ * Where you last dragged the card: its left edge and its bottom edge, in the units it was
+ * saved in ("physical" pixels on Windows, "logical" points on macOS). Positions without a
+ * unit came from the Electron version and are ignored.
+ */
 export interface CardPos {
   x: number;
   bottom: number;
+  unit?: 'physical' | 'logical';
 }
+
+// settings.json and stats.json are read and written by the app (src-tauri/src/store.rs);
+// these describe the same files for the TypeScript side.
 
 /** settings.json */
 export interface Settings {

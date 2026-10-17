@@ -18,6 +18,9 @@ freely.
 The list is typed (the `Exercise` shape in [`src/types.ts`](../src/types.ts)), so a misspelled field,
 pose or move is an error: your editor underlines it, and `npm run typecheck` reports it.
 
+This is the only copy. The build writes it out as `build/exercises.json` for the app's Rust side, so
+there's nothing else to change.
+
 A simple timed stretch:
 
 ```js
@@ -48,11 +51,11 @@ Every field:
 | `seconds` | How long the timer runs. Not needed with `rep`. |
 | `reps` | How many reps. Shows "Rep 3 of 10" while the timer runs. |
 | `rep` | The parts of one rep, for [guided reps](#guided-reps). |
-| `lead` | Seconds of "Get ready" before the timer. Default 3; `0` for none. |
+| `lead` | Seconds of "Get ready" before the timer; `0` for none. Default 3, or 0 for a stretch marked `walk`. |
 | `ready` | What to do during "Get ready". |
 | `sides` | `true` to switch sides halfway: Gino mirrors and the card says "Other side". Only for a plain timed stretch, not with `rep`. |
 | `walk` | `true` for the walkaround, which takes every third turn. Only the first stretch marked `walk` is used. |
-| `howTo` | The steps behind "How to". |
+| `howTo` | The steps behind "How to". Keep them short: with the steps open, the card can be at most 640 px tall (about twice the tallest built-in one), and the buttons sit below the list. |
 
 ## Guided reps
 
@@ -113,20 +116,25 @@ Poses without moves loop their own demonstration. To add a pose or a move:
 
 ## Change the defaults
 
-The defaults are at the top of [`main.ts`](../main.ts):
+The defaults are in `Settings::default()` in [`src-tauri/src/store.rs`](../src-tauri/src/store.rs):
 
-```ts
-const DEFAULT_SETTINGS: Settings = {
-  intervalMin: 20,     // active screen time between stretches
-  snoozeMin: 10,
-  idleResetMin: 5,     // idle this long counts as a break and restarts the timer
-  autoSnoozeMin: 4,    // an ignored card snoozes itself
-  waitWhenBusy: true,  // Windows: hold reminders during calls and full-screen apps
-  ...
-};
+```rust
+impl Default for Settings {
+    fn default() -> Self {
+        Settings {
+            interval_min: 20,     // active screen time between stretches
+            snooze_min: 10,
+            idle_reset_min: 5,    // idle this long counts as a break and restarts the timer
+            auto_snooze_min: 4,   // an ignored card snoozes itself
+            wait_when_busy: true, // Windows: hold reminders during calls and full-screen apps
+            ...
+        }
+    }
+}
 ```
 
-The choices in **Remind me every** are in `buildMenu()` in the same file.
+The choices in **Remind me every** are `INTERVALS` at the top of
+[`src-tauri/src/tray.rs`](../src-tauri/src/tray.rs).
 
 Your own saved settings win over these defaults. If you change a default and don't see it, edit or
 delete `settings.json` (in `%APPDATA%\Gino` on Windows, `~/Library/Application Support/Gino` on
@@ -142,6 +150,7 @@ macOS).
 - **`dev/poses.html`**: run `npm run build`, then open it in a browser to see all of Gino's poses,
   with the guided-rep poses looping one rep.
 - **`npm run typecheck`** catches misspelled fields, poses and moves.
-- **`npm test`** checks the timer and placement logic.
+- **`npm test`** checks the timer, placement and settings logic.
 
-When you're happy, build new installers: see [Development](development.md#building-the-installers).
+When you're happy, build a new installer with `npm run dist`: see
+[Development](development.md#building-the-installers).
