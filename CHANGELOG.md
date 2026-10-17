@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.3.0 (16 October 2026)
+## 0.3.0 (17 October 2026)
 
 - **Much smaller and lighter.** On Windows the download is now about 3 MB instead of about 100 MB,
   and Gino takes about 4 MB once installed instead of about 370 MB. While he waits he uses about
